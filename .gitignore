@@ -1,0 +1,22 @@
+# Environment files
+.env
+.env*.local
+
+# Node dependencies and build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python virtual environment and bytecode
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+
+# OS files
+Thumbs.db
+.DS_Store
+
