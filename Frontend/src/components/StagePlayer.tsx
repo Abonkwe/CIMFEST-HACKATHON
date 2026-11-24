@@ -1,20 +1,27 @@
-import React, { useState, useEffect, useMemo } from 'react'
-import type { MoveBlock } from '../types'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { motion } from 'framer-motion'
+import type { MoveBlock, StoryBackground, StoryProp, StorySFX, BgMotion } from '../types'
+import { storySFX } from '../lib/audioUtils'
+import { PuppetCharacter } from './PuppetCharacter'
+import { LottieCharacter } from './LottieCharacter'
+import { getLottieStageMotion, LOTTIE_STAGE_SPRING } from '../lib/lottieActions'
 
-export type BackgroundTheme =
-  | 'sage_starburst'
-  | 'amber_sunset'
-  | 'slate_night'
-  | 'lavender_haze'
+export type BackgroundTheme = StoryBackground
 
 export interface StagePlayerProps {
   characterId: string
-  backgroundTheme?: BackgroundTheme | string
+  characterAId?: string
+  characterBId?: string | null
+  backgroundTheme?: StoryBackground | string
+  bgMotion?: BgMotion
+  prop?: StoryProp
   movesTimeline?: MoveBlock[]
   bpm?: number
   currentTime?: number
   isPlaying?: boolean
   caption?: string
+  captionA?: string
+  captionB?: string
   sticker?: string | null
   onStickerTap?: (sticker: string) => void
   showControls?: boolean
@@ -28,7 +35,7 @@ export interface StagePlayerProps {
 }
 
 // Normalize character ID to match asset names
-function normalizeCharacterId(rawId?: string): 'tantie' | 'mboa_boy' | 'pa_buea' {
+function normalizeCharacterId(rawId?: string | null): 'tantie' | 'mboa_boy' | 'pa_buea' {
   if (!rawId) return 'tantie'
   const lower = rawId.toLowerCase().trim()
   if (lower.includes('tantie') || lower.includes('girl') || lower.includes('mama')) {
@@ -41,513 +48,360 @@ function normalizeCharacterId(rawId?: string): 'tantie' | 'mboa_boy' | 'pa_buea'
 }
 
 // -------------------------------------------------------------
-// Pure CSS & SVG Stage Background Components (NFR-2: Zero heavy images)
+// 1. Illustrated CSS / SVG Story Environments (NFR-2: Zero heavy images)
 // -------------------------------------------------------------
 
-const SageStarburstBackground: React.FC<{ isPlaying: boolean; bpm: number }> = ({ isPlaying, bpm }) => {
-  // Pulsing coral-pink #F43F5E starburst over muted olive-sage #536D56
-  const pulseDuration = bpm > 0 ? (60 / bpm) * 2 : 1.2
-  return (
-    <div className="absolute inset-0 bg-[#536D56] overflow-hidden select-none">
-      {/* Radial vignette / lighting */}
-      <div className="absolute inset-0 bg-radial from-transparent via-black/20 to-black/60 pointer-events-none" />
+/**
+ * 1. Street Buea: Volcanic Mount Cameroon ridge, colonial arch buildings, palm trees, road divider, streetlamps
+ */
+const StreetBueaBackground: React.FC<{ isPlaying: boolean; bgMotion?: BgMotion }> = ({ isPlaying, bgMotion }) => {
+  const isScrollingLeft = isPlaying && bgMotion === 'scroll_left'
+  const isScrollingRight = isPlaying && bgMotion === 'scroll_right'
 
-      {/* SVG Geometric Starburst with Coral #F43F5E rays */}
-      <svg
-        viewBox="0 0 400 400"
-        className={`absolute -inset-10 w-[calc(100%+80px)] h-[calc(100%+80px)] pointer-events-none transition-transform duration-300 ${
-          isPlaying ? 'animate-starburst-pulse' : 'opacity-70'
+  return (
+    <div className="absolute inset-0 bg-gradient-to-b from-[#1E293B] via-[#334155] to-[#1E3A1E] overflow-hidden select-none">
+      {/* Drifting Clouds */}
+      <svg className="absolute top-2 w-[200%] h-12 opacity-35 animate-[street-clouds_32s_linear_infinite] pointer-events-none" viewBox="0 0 1000 60" preserveAspectRatio="none">
+        <path d="M50 30 Q70 10 90 30 T130 30 Q145 15 160 30 Z M350 25 Q370 5 390 25 T430 25 Z M650 30 Q670 10 690 30 T730 30 Z M850 20 Q870 5 890 20 Z" fill="#E2E8F0" />
+      </svg>
+
+      {/* Mount Cameroon Volcanic Ridge */}
+      <svg viewBox="0 0 800 240" preserveAspectRatio="none" className="absolute top-[8%] left-0 right-0 w-full h-[54%] pointer-events-none opacity-85">
+        {/* Distant majestic mountain peak */}
+        <polygon points="0,240 180,90 320,35 460,95 620,130 800,240" fill="#0F172A" />
+        <polygon points="260,65 320,35 380,72 350,95 290,90" fill="#1E293B" opacity="0.6" />
+        {/* Lush green foothills */}
+        <path d="M0 240 Q150 160 300 190 T600 170 T800 210 L800 240 Z" fill="#14361C" />
+      </svg>
+
+      {/* Parallax Moving Street Layer (Buea Colonial Architecture, Palm Trees, Lamp Posts) */}
+      <div
+        className={`absolute bottom-0 w-[200%] h-[56%] pointer-events-none ${
+          isScrollingLeft
+            ? 'animate-[buea-scroll-left_6s_linear_infinite]'
+            : isScrollingRight
+            ? 'animate-[buea-scroll-right_6s_linear_infinite]'
+            : ''
         }`}
-        style={{
-          animationDuration: `${pulseDuration}s`,
-        }}
       >
-        <defs>
-          <radialGradient id="starburst-grad" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#F43F5E" stopOpacity="0.85" />
-            <stop offset="60%" stopColor="#F43F5E" stopOpacity="0.45" />
-            <stop offset="100%" stopColor="#F43F5E" stopOpacity="0" />
-          </radialGradient>
-        </defs>
+        <svg viewBox="0 0 1600 200" preserveAspectRatio="none" className="w-full h-full">
+          {/* Colonial Storefronts & Buildings */}
+          <rect x="30" y="40" width="130" height="120" fill="#2E3C2B" stroke="#162215" strokeWidth="2" />
+          <rect x="50" y="60" width="30" height="40" rx="15" fill="#FACC15" fillOpacity="0.7" />
+          <rect x="100" y="60" width="30" height="40" rx="15" fill="#FACC15" fillOpacity="0.7" />
+          <polygon points="20,40 95,15 170,40" fill="#991B1B" />
 
-        <g transform="translate(200, 200)">
-          {Array.from({ length: 16 }).map((_, i) => {
-            const angle = (i * 360) / 16
-            return (
-              <polygon
-                key={i}
-                points="0,0 -22,-200 22,-200"
-                fill="url(#starburst-grad)"
-                transform={`rotate(${angle})`}
-              />
-            )
-          })}
-          {/* Central Coral Glow Disc */}
-          <circle cx="0" cy="0" r="45" fill="#F43F5E" fillOpacity="0.3" />
-        </g>
-      </svg>
+          <rect x="230" y="55" width="160" height="105" fill="#1E293B" stroke="#0F172A" strokeWidth="2" />
+          <rect x="250" y="75" width="40" height="30" fill="#38BDF8" fillOpacity="0.6" />
+          <rect x="320" y="75" width="40" height="30" fill="#38BDF8" fillOpacity="0.6" />
 
-      {/* Halftone / Comic Dot pattern overlay */}
-      <div
-        className="absolute inset-0 opacity-15 pointer-events-none"
-        style={{
-          backgroundImage: 'radial-gradient(#FACC15 1px, transparent 1px)',
-          backgroundSize: '16px 16px',
-        }}
-      />
+          {/* Repeat Buildings on right half */}
+          <rect x="830" y="40" width="130" height="120" fill="#2E3C2B" stroke="#162215" strokeWidth="2" />
+          <rect x="850" y="60" width="30" height="40" rx="15" fill="#FACC15" fillOpacity="0.7" />
+          <rect x="900" y="60" width="30" height="40" rx="15" fill="#FACC15" fillOpacity="0.7" />
+          <polygon points="820,40 895,15 970,40" fill="#991B1B" />
 
-      {/* Stage Floor */}
-      <div className="absolute bottom-0 w-full h-[28%] bg-gradient-to-t from-[#202d22] via-[#334636] to-transparent border-t border-[#FACC15]/20">
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#FACC15]/60 to-transparent" />
+          <rect x="1030" y="55" width="160" height="105" fill="#1E293B" stroke="#0F172A" strokeWidth="2" />
+          <rect x="1050" y="75" width="40" height="30" fill="#38BDF8" fillOpacity="0.6" />
+          <rect x="1120" y="75" width="40" height="30" fill="#38BDF8" fillOpacity="0.6" />
+
+          {/* Tropical Palm Trees */}
+          <path d="M190 160 Q193 100 200 40" stroke="#451A03" strokeWidth="6" fill="none" />
+          <path d="M200 40 Q160 25 150 45 M200 40 Q180 15 180 5 M200 40 Q225 10 235 25 M200 40 Q240 30 245 50 M200 40 Q200 15 215 10" stroke="#15803D" strokeWidth="4" fill="none" />
+
+          <path d="M990 160 Q993 100 1000 40" stroke="#451A03" strokeWidth="6" fill="none" />
+          <path d="M1000 40 Q960 25 950 45 M1000 40 Q980 15 980 5 M1000 40 Q1025 10 1035 25 M1000 40 Q1040 30 1045 50" stroke="#15803D" strokeWidth="4" fill="none" />
+
+          {/* Street Lampposts with warm halo */}
+          <line x1="430" y1="160" x2="430" y2="45" stroke="#18181B" strokeWidth="3" />
+          <circle cx="430" cy="45" r="5" fill="#FACC15" />
+          <circle cx="430" cy="45" r="16" fill="#FACC15" fillOpacity="0.25" />
+
+          <line x1="1230" y1="160" x2="1230" y2="45" stroke="#18181B" strokeWidth="3" />
+          <circle cx="1230" cy="45" r="5" fill="#FACC15" />
+          <circle cx="1230" cy="45" r="16" fill="#FACC15" fillOpacity="0.25" />
+
+          {/* Sidewalk & Asphalt Road */}
+          <rect x="0" y="160" width="1600" height="12" fill="#475569" />
+          <rect x="0" y="172" width="1600" height="28" fill="#18181B" />
+          <line x1="0" y1="186" x2="1600" y2="186" stroke="#FEF08A" strokeWidth="2.5" strokeDasharray="30 20" />
+        </svg>
       </div>
     </div>
   )
 }
 
-const AmberSunsetBackground: React.FC<{ isPlaying: boolean; bpm: number }> = ({ isPlaying, bpm }) => {
-  const pulseDuration = bpm > 0 ? 60 / bpm : 0.6
+/**
+ * 2. Living Room: Cozy home parlor with doorway, picture window looking at Mount Cameroon, wall art, sofa silhouette
+ */
+const LivingRoomBackground: React.FC = () => {
   return (
-    <div className="absolute inset-0 bg-gradient-to-b from-[#2E1065] via-[#9A3412] to-[#D97706] overflow-hidden select-none">
-      {/* Sun Disc */}
+    <div className="absolute inset-0 bg-[#291711] overflow-hidden select-none">
+      {/* Wall with warm ochre & Cameroonian geometric texture */}
+      <div className="absolute top-0 left-0 right-0 h-[72%] bg-gradient-to-b from-[#7C2D12] to-[#451A03] border-b-[6px] border-[#2E1005]">
+        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#FACC15_1px,transparent_1px)] [background-size:16px_16px]" />
+
+        {/* Arched Door on the Left */}
+        <div className="absolute bottom-0 left-[6%] w-16 sm:w-20 h-40 sm:h-48 rounded-t-full border-[3px] border-[#291711] bg-[#3B170B] shadow-inner">
+          <div className="absolute top-1/2 right-2 w-2.5 h-2.5 rounded-full bg-[#FACC15] shadow" />
+        </div>
+
+        {/* Picture Window looking outside at Mount Cameroon */}
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-36 sm:w-48 h-24 sm:h-32 rounded-xl border-[4px] border-[#3B170B] bg-[#0F172A] overflow-hidden shadow-2xl">
+          {/* View through window */}
+          <div className="absolute inset-0 bg-gradient-to-b from-[#38BDF8]/40 to-[#14532D]">
+            <polygon points="10,120 70,40 120,70 180,120" fill="#0F172A" />
+          </div>
+          {/* Window pane crosses */}
+          <div className="absolute top-0 bottom-0 left-1/2 w-[2px] bg-[#3B170B]" />
+          <div className="absolute left-0 right-0 top-1/2 h-[2px] bg-[#3B170B]" />
+          {/* Curtains */}
+          <div className="absolute top-0 bottom-0 left-0 w-4 bg-[#E11D48]/80 shadow" />
+          <div className="absolute top-0 bottom-0 right-0 w-4 bg-[#E11D48]/80 shadow" />
+        </div>
+
+        {/* Framed Cameroon Art on Right */}
+        <div className="absolute top-10 right-[8%] w-14 sm:w-18 h-18 sm:h-22 rounded-lg border-[3px] border-[#FACC15] bg-[#18181B] p-1 shadow-lg text-center flex flex-col items-center justify-center">
+          <span className="text-sm sm:text-base">🇨🇲</span>
+          <span className="text-[8px] font-black text-[#FACC15] tracking-wider mt-0.5">BUEA 237</span>
+        </div>
+
+        {/* Potted Monstera / Tropical Plant */}
+        <div className="absolute bottom-0 right-[4%] w-12 h-20 pointer-events-none">
+          <svg viewBox="0 0 50 80" className="w-full h-full">
+            <path d="M25 80 L25 40 M25 50 Q10 35 5 45 M25 45 Q40 30 45 40 M25 35 Q15 20 20 15 M25 35 Q35 15 30 10" stroke="#16A34A" strokeWidth="3" fill="none" />
+            <polygon points="15,80 35,80 38,60 12,60" fill="#D97706" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Parquet Hardwood Floor with Traditional Wax-Print Rug */}
+      <div className="absolute bottom-0 w-full h-[28%] bg-gradient-to-t from-[#1A0B05] to-[#2E1005]">
+        {/* Cameroonian Geometric Wax-Print Rug in center */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-[68%] h-[65%] rounded-2xl bg-gradient-to-r from-[#D97706] via-[#B91C1C] to-[#047857] border-[2px] border-[#FACC15] shadow-lg flex items-center justify-center opacity-85">
+          <div className="w-[85%] h-[60%] border border-[#FEF08A] rounded-xl border-dashed" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 3. Chop House: Local Cameroonian café & bar scene with chalkboard menu, counter, string lights
+ */
+const ChopHouseBackground: React.FC = () => {
+  return (
+    <div className="absolute inset-0 bg-[#1C0E07] overflow-hidden select-none">
+      {/* Warm Timber Walls */}
+      <div className="absolute top-0 left-0 right-0 h-[70%] bg-gradient-to-b from-[#3D1E0C] to-[#261105]">
+        {/* Festive String Fairy Lights along ceiling */}
+        <svg viewBox="0 0 400 30" preserveAspectRatio="none" className="absolute top-0 left-0 right-0 w-full h-7">
+          <path d="M0 5 Q50 20 100 5 Q150 20 200 5 Q250 20 300 5 Q350 20 400 5" stroke="#52525B" strokeWidth="1.5" fill="none" />
+          {[25, 75, 125, 175, 225, 275, 325, 375].map((cx, i) => (
+            <g key={i}>
+              <circle cx={cx} cy={14} r="4" fill={i % 2 === 0 ? '#FACC15' : '#F43F5E'} />
+              <circle cx={cx} cy={14} r="10" fill={i % 2 === 0 ? '#FACC15' : '#F43F5E'} fillOpacity="0.25" />
+            </g>
+          ))}
+        </svg>
+
+        {/* Large Chalkboard Menu in Center */}
+        <div className="absolute top-9 left-1/2 -translate-x-1/2 w-48 sm:w-64 h-24 sm:h-28 rounded-xl border-[4px] border-[#78350F] bg-[#18181B] p-2 shadow-2xl text-center flex flex-col justify-center">
+          <div className="text-[10px] sm:text-xs font-black text-[#FACC15] tracking-widest border-b border-[#3F3F46] pb-1 uppercase">
+            ★ Chez Tantie · 237 Delices ★
+          </div>
+          <div className="text-[8px] sm:text-[9px] text-[#A1A1AA] font-mono mt-1 space-y-0.5">
+            <div>NDOLÉ & PLANTAIN · 1,500 FCFA</div>
+            <div>POISSON BRAISÉ & BATON · 2,000 FCFA</div>
+            <div>SOYA CHAUD & PIMENT · 500 FCFA</div>
+          </div>
+        </div>
+
+        {/* Bar Counter Shelves */}
+        <div className="absolute bottom-2 left-6 right-6 h-6 border-t-2 border-[#78350F] flex justify-around items-end px-4">
+          <div className="w-3 h-5 rounded-t bg-[#059669]/70" />
+          <div className="w-2.5 h-6 rounded-t bg-[#D97706]/70" />
+          <div className="w-3 h-5 rounded-t bg-[#E11D48]/70" />
+          <div className="w-2.5 h-6 rounded-t bg-[#0284C7]/70" />
+        </div>
+      </div>
+
+      {/* Checkerboard Bistro Floor */}
+      <div className="absolute bottom-0 w-full h-[30%] bg-[#221008] border-t-2 border-[#78350F]">
+        <div className="absolute inset-0 bg-[linear-gradient(45deg,#29140B_25%,transparent_25%),linear-gradient(-45deg,#29140B_25%,transparent_25%)] [background-size:24px_24px] opacity-70" />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 4. Park Sunset: Botanical mountain park with orange-red sunset gradient, rolling hills, umbrella trees, lampposts
+ */
+const ParkSunsetBackground: React.FC<{ isPlaying: boolean; bgMotion?: BgMotion }> = ({ isPlaying, bgMotion }) => {
+  const isScrollingLeft = isPlaying && bgMotion === 'scroll_left'
+  const isScrollingRight = isPlaying && bgMotion === 'scroll_right'
+
+  return (
+    <div className="absolute inset-0 bg-gradient-to-b from-[#311042] via-[#9A3412] to-[#D97706] overflow-hidden select-none">
+      {/* Golden Glowing Sunset Disc */}
+      <div className="absolute top-[16%] left-1/2 -translate-x-1/2 w-32 h-32 sm:w-44 sm:h-44 rounded-full bg-gradient-to-t from-[#F59E0B] to-[#FEF08A] blur-[1px] shadow-[0_0_60px_#F59E0B] pointer-events-none" />
+
+      {/* Mountain Ridge Silhouette */}
+      <svg viewBox="0 0 800 160" preserveAspectRatio="none" className="absolute top-[28%] left-0 right-0 w-full h-32 pointer-events-none opacity-80">
+        <polygon points="0,160 120,70 280,30 450,80 620,50 800,160" fill="#2E1065" />
+      </svg>
+
+      {/* Moving Park Layer: Lush Green Canopy & Cobblestone Path */}
       <div
-        className={`absolute top-[18%] left-1/2 -translate-x-1/2 w-36 h-36 sm:w-44 sm:h-44 rounded-full bg-gradient-to-t from-[#F59E0B] to-[#FEF08A] blur-[1px] shadow-[0_0_60px_#F59E0B] pointer-events-none transition-transform duration-200 ${
-          isPlaying ? 'scale-105' : 'scale-100'
+        className={`absolute bottom-0 w-[200%] h-[52%] pointer-events-none ${
+          isScrollingLeft
+            ? 'animate-[buea-scroll-left_7s_linear_infinite]'
+            : isScrollingRight
+            ? 'animate-[buea-scroll-right_7s_linear_infinite]'
+            : ''
         }`}
-        style={{
-          transitionDuration: `${pulseDuration}s`,
-        }}
-      />
-
-      {/* Radiant Horizon Glow */}
-      <div className="absolute bottom-[24%] left-0 right-0 h-24 bg-gradient-to-t from-[#F59E0B]/40 to-transparent blur-md" />
-
-      {/* Mountain & Acacia Silhouette Horizon */}
-      <svg
-        viewBox="0 0 600 120"
-        preserveAspectRatio="none"
-        className="absolute bottom-[22%] w-full h-16 pointer-events-none opacity-90"
       >
-        <path
-          d="M0 120 L0 80 Q100 40 200 70 T400 65 T600 80 L600 120 Z"
-          fill="#261005"
-        />
-        {/* Acacia Trees Silhouettes */}
-        <path
-          d="M120 70 L122 55 Q115 48 105 45 Q125 35 145 45 Q135 50 126 55 L126 70 Z"
-          fill="#1c0b03"
-        />
-        <path
-          d="M480 72 L482 58 Q475 52 468 50 Q485 42 502 50 Q495 55 486 58 L486 72 Z"
-          fill="#1c0b03"
-        />
-      </svg>
+        <svg viewBox="0 0 1600 180" preserveAspectRatio="none" className="w-full h-full">
+          {/* Lush Green Hills */}
+          <path d="M0 140 Q200 80 400 120 T800 90 T1200 110 T1600 130 L1600 180 L0 180 Z" fill="#14361C" />
 
-      {/* Stage Floor */}
-      <div className="absolute bottom-0 w-full h-[28%] bg-gradient-to-t from-[#1b0802] via-[#431407] to-transparent border-t border-[#F59E0B]/30">
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#F59E0B] to-transparent" />
+          {/* Tropical Umbrella Trees */}
+          <path d="M120 140 L124 70 M124 70 Q90 50 80 60 M124 70 Q160 50 170 60 M124 70 Q124 35 124 30" stroke="#261005" strokeWidth="5" fill="none" />
+          <ellipse cx="124" cy="45" rx="50" ry="18" fill="#15803D" />
+
+          <path d="M920 140 L924 70" stroke="#261005" strokeWidth="5" fill="none" />
+          <ellipse cx="924" cy="45" rx="50" ry="18" fill="#15803D" />
+
+          {/* Classic Park Lampposts */}
+          <line x1="320" y1="140" x2="320" y2="40" stroke="#18181B" strokeWidth="3" />
+          <circle cx="320" cy="40" r="5" fill="#FEF08A" />
+          <circle cx="320" cy="40" r="14" fill="#FEF08A" fillOpacity="0.3" />
+
+          <line x1="1120" y1="140" x2="1120" y2="40" stroke="#18181B" strokeWidth="3" />
+          <circle cx="1120" cy="40" r="5" fill="#FEF08A" />
+          <circle cx="1120" cy="40" r="14" fill="#FEF08A" fillOpacity="0.3" />
+
+          {/* Cobblestone Stone Path */}
+          <path d="M0 150 Q400 140 800 155 T1600 150 L1600 180 L0 180 Z" fill="#451A03" />
+        </svg>
       </div>
     </div>
   )
 }
 
-const SlateNightBackground: React.FC<{ isPlaying: boolean; bpm: number }> = ({ isPlaying, bpm }) => {
-  const pulseDuration = bpm > 0 ? (60 / bpm) * 2 : 1.2
+// Legacy Swatch Backgrounds
+const SageStarburstBackground: React.FC = () => (
+  <div className="absolute inset-0 bg-[#536D56] overflow-hidden select-none">
+    <div className="absolute top-[20%] left-1/2 -translate-x-1/2 w-48 h-48 rounded-full bg-[#F43F5E]/30 blur-2xl" />
+    <div className="absolute bottom-0 w-full h-[28%] bg-[#202d22]" />
+  </div>
+)
+const AmberSunsetBackground: React.FC = () => (
+  <div className="absolute inset-0 bg-gradient-to-b from-[#2E1065] via-[#9A3412] to-[#D97706] overflow-hidden select-none">
+    <div className="absolute bottom-0 w-full h-[28%] bg-[#1b0802]" />
+  </div>
+)
+const SlateNightBackground: React.FC = () => (
+  <div className="absolute inset-0 bg-gradient-to-b from-[#090D16] via-[#0F172A] to-[#1E1B4B] overflow-hidden select-none">
+    <div className="absolute bottom-0 w-full h-[28%] bg-[#080d1a]" />
+  </div>
+)
+const LavenderHazeBackground: React.FC = () => (
+  <div className="absolute inset-0 bg-gradient-to-b from-[#3B0764] via-[#701A75] to-[#831843] overflow-hidden select-none">
+    <div className="absolute bottom-0 w-full h-[28%] bg-[#1a052e]" />
+  </div>
+)
+
+// -------------------------------------------------------------
+// 2. Scene Props Component (SVG Overlay)
+// -------------------------------------------------------------
+
+const ScenePropOverlay: React.FC<{ prop?: StoryProp | string }> = ({ prop }) => {
+  if (!prop || prop === 'none') return null
   return (
-    <div className="absolute inset-0 bg-gradient-to-b from-[#090D16] via-[#0F172A] to-[#1E1B4B] overflow-hidden select-none">
-      {/* Cyan & Lime Spotlights */}
-      <svg
-        viewBox="0 0 400 400"
-        preserveAspectRatio="none"
-        className="absolute inset-0 w-full h-full pointer-events-none"
-      >
-        <defs>
-          <linearGradient id="cyan-beam" x1="0%" y1="0%" x2="50%" y2="100%">
-            <stop offset="0%" stopColor="#06B6D4" stopOpacity="0.5" />
-            <stop offset="70%" stopColor="#06B6D4" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#06B6D4" stopOpacity="0" />
-          </linearGradient>
-          <linearGradient id="lime-beam" x1="100%" y1="0%" x2="50%" y2="100%">
-            <stop offset="0%" stopColor="#84CC16" stopOpacity="0.45" />
-            <stop offset="70%" stopColor="#84CC16" stopOpacity="0.12" />
-            <stop offset="100%" stopColor="#84CC16" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-
-        {/* Left Cyan Spotlight Cone */}
-        <polygon
-          points="20,0 70,0 230,350 130,350"
-          fill="url(#cyan-beam)"
-          className={`transition-opacity duration-300 ${isPlaying ? 'opacity-100' : 'opacity-60'}`}
-          style={{ animation: isPlaying ? `starburstPulse ${pulseDuration}s infinite alternate` : 'none' }}
-        />
-
-        {/* Right Lime Spotlight Cone */}
-        <polygon
-          points="380,0 330,0 170,350 270,350"
-          fill="url(#lime-beam)"
-          className={`transition-opacity duration-300 ${isPlaying ? 'opacity-100' : 'opacity-60'}`}
-          style={{ animation: isPlaying ? `starburstPulse ${pulseDuration * 1.1}s infinite alternate` : 'none' }}
-        />
-      </svg>
-
-      {/* Floating stage particles */}
-      <div className="absolute top-1/4 left-1/4 w-2 h-2 rounded-full bg-[#06B6D4] blur-[1px] animate-pulse" />
-      <div className="absolute top-1/3 right-1/4 w-2.5 h-2.5 rounded-full bg-[#84CC16] blur-[1px] animate-pulse" />
-
-      {/* Glossy Club Dance Floor */}
-      <div className="absolute bottom-0 w-full h-[28%] bg-gradient-to-t from-[#020617] via-[#0F172A] to-transparent border-t border-[#06B6D4]/40">
-        {/* Reflection Highlight Line */}
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#06B6D4] to-transparent" />
-        {/* Specular Floor Oval */}
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-48 h-6 bg-cyan-400/20 blur-md rounded-full pointer-events-none" />
-      </div>
-    </div>
-  )
-}
-
-const LavenderHazeBackground: React.FC<{ isPlaying: boolean; bpm: number }> = ({ isPlaying, bpm }) => {
-  const pulseDuration = bpm > 0 ? (60 / bpm) * 2 : 1.5
-  return (
-    <div className="absolute inset-0 bg-gradient-to-b from-[#2E1065] via-[#7C3AED] to-[#DB2777] overflow-hidden select-none">
-      {/* Floating Glowing Bokeh Orbs */}
-      <div
-        className={`absolute top-[12%] left-[15%] w-32 h-32 rounded-full bg-[#C084FC]/40 blur-2xl pointer-events-none transition-transform duration-500 ${
-          isPlaying ? 'scale-110' : 'scale-100'
-        }`}
-        style={{ transitionDuration: `${pulseDuration}s` }}
-      />
-      <div
-        className={`absolute top-[25%] right-[10%] w-40 h-40 rounded-full bg-[#F472B6]/35 blur-2xl pointer-events-none transition-transform duration-500 ${
-          isPlaying ? 'scale-115' : 'scale-95'
-        }`}
-        style={{ transitionDuration: `${pulseDuration * 1.2}s` }}
-      />
-      <div className="absolute top-[40%] left-[35%] w-28 h-28 rounded-full bg-[#34D399]/25 blur-xl pointer-events-none" />
-
-      {/* Stage Floor */}
-      <div className="absolute bottom-0 w-full h-[28%] bg-gradient-to-t from-[#18032E] via-[#3B0764] to-transparent border-t border-[#C084FC]/30">
-        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#F472B6] to-transparent" />
-      </div>
+    <div className="absolute bottom-4 sm:bottom-5 left-1/2 -translate-x-1/2 z-15 pointer-events-none drop-shadow-[0_10px_14px_rgba(0,0,0,0.6)] animate-comic-pop transition-all duration-300">
+      {prop === 'phone' && (
+        <svg viewBox="0 0 60 100" className="w-9 h-15 sm:w-11 sm:h-18">
+          <rect x="2" y="2" width="56" height="96" rx="10" fill="#18181B" stroke="#FACC15" strokeWidth="2.5" />
+          <rect x="6" y="10" width="48" height="76" rx="4" fill="#0284C7" />
+          <rect x="10" y="24" width="40" height="22" rx="4" fill="#FFFFFF" />
+          <text x="14" y="38" fontSize="8" fontWeight="bold" fill="#000">1 New Msg 💬</text>
+          <circle cx="30" cy="92" r="3" fill="#71717A" />
+          <circle cx="48" cy="18" r="4" fill="#EF4444" />
+        </svg>
+      )}
+      {prop === 'gift_box' && (
+        <svg viewBox="0 0 90 90" className="w-13 h-13 sm:w-16 sm:h-16">
+          <rect x="10" y="30" width="70" height="55" rx="6" fill="#E11D48" stroke="#18181B" strokeWidth="3" />
+          <rect x="5" y="22" width="80" height="15" rx="4" fill="#BE123C" stroke="#18181B" strokeWidth="3" />
+          <rect x="40" y="22" width="10" height="63" fill="#FACC15" />
+          <path d="M45 22 C35 6 16 12 35 22 Z" fill="#FACC15" stroke="#18181B" strokeWidth="2" />
+          <path d="M45 22 C55 6 74 12 55 22 Z" fill="#FACC15" stroke="#18181B" strokeWidth="2" />
+          <circle cx="45" cy="22" r="4" fill="#CA8A04" />
+        </svg>
+      )}
+      {prop === 'table' && (
+        <svg viewBox="0 0 120 80" className="w-20 h-14 sm:w-26 sm:h-18">
+          <ellipse cx="60" cy="20" rx="56" ry="14" fill="#78350F" stroke="#18181B" strokeWidth="3" />
+          <ellipse cx="60" cy="18" rx="50" ry="11" fill="#92400E" />
+          <rect x="55" y="24" width="10" height="48" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
+          <ellipse cx="60" cy="72" rx="28" ry="6" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
+          <rect x="42" y="10" width="8" height="12" rx="2" fill="#E0F2FE" fillOpacity="0.8" stroke="#0284C7" strokeWidth="1" />
+          <rect x="70" y="10" width="8" height="12" rx="2" fill="#FEF08A" fillOpacity="0.8" stroke="#CA8A04" strokeWidth="1" />
+        </svg>
+      )}
+      {prop === 'car' && (
+        <svg viewBox="0 0 140 70" className="w-24 h-12 sm:w-30 sm:h-15">
+          <path d="M10 50 L25 28 L50 20 L95 20 L115 32 L132 45 L132 55 L10 55 Z" fill="#FACC15" stroke="#18181B" strokeWidth="3" />
+          <path d="M30 30 L50 24 L50 42 L24 42 Z" fill="#0284C7" fillOpacity="0.7" stroke="#18181B" strokeWidth="1.5" />
+          <path d="M55 24 L90 24 L108 34 L108 42 L55 42 Z" fill="#0284C7" fillOpacity="0.7" stroke="#18181B" strokeWidth="1.5" />
+          <circle cx="35" cy="54" r="11" fill="#18181B" />
+          <circle cx="35" cy="54" r="5" fill="#E4E4E7" />
+          <circle cx="108" cy="54" r="11" fill="#18181B" />
+          <circle cx="108" cy="54" r="5" fill="#E4E4E7" />
+          <rect x="62" y="14" width="22" height="7" rx="2" fill="#FFFFFF" stroke="#18181B" strokeWidth="1.5" />
+          <text x="65" y="20" fontSize="5" fontWeight="bold" fill="#000">TAXI</text>
+        </svg>
+      )}
     </div>
   )
 }
 
 // -------------------------------------------------------------
-// Clean Inline SVG Fallbacks for Tantie, Mboa Boy, Pa Buea (FR-20, FR-21)
-// -------------------------------------------------------------
-
-const InlineCharacterSVG: React.FC<{
-  character: 'tantie' | 'mboa_boy' | 'pa_buea'
-  isPoseB: boolean
-}> = ({ character, isPoseB }) => {
-  if (character === 'tantie') {
-    return isPoseB ? (
-      <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-        <ellipse cx="120" cy="305" rx="50" ry="9" fill="#000000" fillOpacity="0.3" />
-        <path d="M86 284 C81 284 76 291 79 298 C82 301 100 301 101 296 C101 290 92 284 86 284 Z" fill="#D97706" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M152 284 C147 284 142 291 145 298 C148 301 166 301 167 296 C167 290 158 284 152 284 Z" fill="#D97706" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M96 236 L92 288" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-        <path d="M144 236 L148 288" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-        <path d="M80 142 C68 172 65 212 60 246 C85 254 165 254 190 246 C182 212 176 172 160 142 Z" fill="#536D56" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-        <path d="M75 186 Q122 198 172 186" stroke="#FACC15" strokeWidth="4" strokeDasharray="8 6" />
-        <path d="M68 221 Q122 234 180 221" stroke="#F43F5E" strokeWidth="4" strokeDasharray="10 6" />
-        <circle cx="122" cy="170" r="9" fill="#FACC15" stroke="#18181B" strokeWidth="2" />
-        <circle cx="100" cy="210" r="7" fill="#F43F5E" stroke="#18181B" strokeWidth="2" />
-        <circle cx="150" cy="210" r="7" fill="#F43F5E" stroke="#18181B" strokeWidth="2" />
-        <path d="M80 144 Q52 115 45 88 Q55 80 64 92" fill="none" stroke="#6B4423" strokeWidth="13" strokeLinecap="round" />
-        <path d="M80 144 Q52 115 45 88 Q55 80 64 92" fill="none" stroke="#18181B" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="48" cy="100" r="7" fill="none" stroke="#FACC15" strokeWidth="3.5" />
-        <path d="M160 144 Q188 115 195 88 Q185 80 176 92" fill="none" stroke="#6B4423" strokeWidth="13" strokeLinecap="round" />
-        <path d="M160 144 Q188 115 195 88 Q185 80 176 92" fill="none" stroke="#18181B" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="192" cy="100" r="7" fill="none" stroke="#FACC15" strokeWidth="3.5" />
-        <path d="M110 118 L110 145 L130 145 L130 118 Z" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <path d="M106 138 Q120 150 134 138" fill="none" stroke="#F43F5E" strokeWidth="4.5" strokeLinecap="round" />
-        <g transform="rotate(4 120 95)">
-          <circle cx="120" cy="95" r="32" fill="#6B4423" stroke="#18181B" strokeWidth="3" />
-          <circle cx="88" cy="97" r="7" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-          <circle cx="82" cy="107" r="9" fill="none" stroke="#FACC15" strokeWidth="3" />
-          <circle cx="152" cy="97" r="7" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-          <circle cx="158" cy="107" r="9" fill="none" stroke="#FACC15" strokeWidth="3" />
-          <path d="M104 94 Q109 88 114 94" fill="none" stroke="#18181B" strokeWidth="3" strokeLinecap="round" />
-          <ellipse cx="132" cy="91" rx="4.5" ry="6" fill="#18181B" />
-          <circle cx="133.5" cy="89" r="1.8" fill="#FFFFFF" />
-          <path d="M102 79 Q109 74 116 80" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-          <path d="M125 78 Q132 73 139 79" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-          <path d="M117 96 Q120 101 123 96" fill="none" stroke="#42250E" strokeWidth="2.5" strokeLinecap="round" />
-          <path d="M106 105 Q120 126 134 105 Z" fill="#E11D48" stroke="#18181B" strokeWidth="2.5" />
-          <path d="M109 105 Q120 113 131 105" fill="#FFFFFF" />
-          <ellipse cx="98" cy="101" rx="4" ry="2.5" fill="#F43F5E" fillOpacity="0.5" />
-          <ellipse cx="142" cy="101" rx="4" ry="2.5" fill="#F43F5E" fillOpacity="0.5" />
-          <path d="M88 81 C85 47 100 32 120 32 C140 32 155 47 152 81 C158 72 168 57 162 45 C150 21 90 21 78 45 C72 57 82 72 88 81 Z" fill="#FACC15" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-          <path d="M105 35 C95 15 145 15 135 35 Z" fill="#F43F5E" stroke="#18181B" strokeWidth="2.5" />
-          <path d="M92 62 Q120 49 148 62" stroke="#059669" strokeWidth="3.5" />
-          <circle cx="120" cy="45" r="4" fill="#536D56" />
-        </g>
-      </svg>
-    ) : (
-      <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-        <ellipse cx="120" cy="305" rx="55" ry="10" fill="#000000" fillOpacity="0.25" />
-        <path d="M90 288 C85 288 80 295 82 302 C84 305 102 305 104 300 C104 294 96 288 90 288 Z" fill="#D97706" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M148 288 C143 288 138 295 140 302 C142 305 160 305 162 300 C162 294 154 288 148 288 Z" fill="#D97706" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M96 240 L94 292" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-        <path d="M144 240 L146 292" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-        <path d="M80 145 C65 175 60 215 55 250 C80 258 160 258 185 250 C180 215 175 175 160 145 Z" fill="#536D56" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-        <path d="M72 190 Q120 205 168 190" stroke="#FACC15" strokeWidth="4" strokeDasharray="8 6" />
-        <path d="M64 225 Q120 240 176 225" stroke="#F43F5E" strokeWidth="4" strokeDasharray="10 6" />
-        <circle cx="120" cy="175" r="9" fill="#FACC15" stroke="#18181B" strokeWidth="2" />
-        <circle cx="95" cy="215" r="7" fill="#F43F5E" stroke="#18181B" strokeWidth="2" />
-        <circle cx="145" cy="215" r="7" fill="#F43F5E" stroke="#18181B" strokeWidth="2" />
-        <path d="M80 148 Q50 170 48 195 Q54 205 65 198" fill="none" stroke="#6B4423" strokeWidth="13" strokeLinecap="round" />
-        <path d="M80 148 Q50 170 48 195 Q54 205 65 198" fill="none" stroke="#18181B" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="50" cy="190" r="7" fill="none" stroke="#FACC15" strokeWidth="3.5" />
-        <path d="M160 148 Q188 170 178 195 Q168 200 162 190" fill="none" stroke="#6B4423" strokeWidth="13" strokeLinecap="round" />
-        <path d="M160 148 Q188 170 178 195 Q168 200 162 190" fill="none" stroke="#18181B" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="176" cy="190" r="7" fill="none" stroke="#FACC15" strokeWidth="3.5" />
-        <path d="M110 120 L110 148 L130 148 L130 120 Z" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <path d="M106 140 Q120 152 134 140" fill="none" stroke="#F43F5E" strokeWidth="4.5" strokeLinecap="round" />
-        <circle cx="120" cy="98" r="32" fill="#6B4423" stroke="#18181B" strokeWidth="3" />
-        <circle cx="88" cy="100" r="7" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <circle cx="84" cy="108" r="9" fill="none" stroke="#FACC15" strokeWidth="3" />
-        <circle cx="152" cy="100" r="7" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <circle cx="156" cy="108" r="9" fill="none" stroke="#FACC15" strokeWidth="3" />
-        <ellipse cx="108" cy="94" rx="4" ry="5.5" fill="#18181B" />
-        <circle cx="109.5" cy="92.5" r="1.5" fill="#FFFFFF" />
-        <path d="M104 88 L102 85 M108 86 L108 82 M112 88 L114 85" stroke="#18181B" strokeWidth="1.8" strokeLinecap="round" />
-        <ellipse cx="132" cy="94" rx="4" ry="5.5" fill="#18181B" />
-        <circle cx="133.5" cy="92.5" r="1.5" fill="#FFFFFF" />
-        <path d="M128 88 L126 85 M132 86 L132 82 M136 88 L138 85" stroke="#18181B" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M102 83 Q109 78 115 82" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M125 82 Q131 78 138 83" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M117 99 Q120 104 123 99" fill="none" stroke="#42250E" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M109 110 Q120 122 131 110" fill="#E11D48" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M112 110 Q120 114 128 110" fill="#FFFFFF" />
-        <ellipse cx="98" cy="104" rx="4" ry="2.5" fill="#F43F5E" fillOpacity="0.4" />
-        <ellipse cx="142" cy="104" rx="4" ry="2.5" fill="#F43F5E" fillOpacity="0.4" />
-        <path d="M88 84 C85 50 100 35 120 35 C140 35 155 50 152 84 C158 75 168 60 162 48 C150 24 90 24 78 48 C72 60 82 75 88 84 Z" fill="#FACC15" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-        <path d="M105 38 C95 18 145 18 135 38 Z" fill="#F43F5E" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M92 65 Q120 52 148 65" stroke="#059669" strokeWidth="3.5" />
-        <circle cx="120" cy="48" r="4" fill="#536D56" />
-      </svg>
-    )
-  }
-
-  if (character === 'mboa_boy') {
-    return isPoseB ? (
-      <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-        <ellipse cx="120" cy="305" rx="46" ry="8" fill="#000000" fillOpacity="0.25" />
-        <path d="M76 284 C74 276 86 272 96 275 L97 291 C95 297 76 297 76 284 Z" fill="#FFFFFF" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M76 289 L96 289" stroke="#F43F5E" strokeWidth="3" />
-        <path d="M144 275 C154 272 166 276 164 284 C164 297 145 297 143 291 L144 275 Z" fill="#FFFFFF" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M144 289 L164 289" stroke="#F43F5E" strokeWidth="3" />
-        <path d="M84 194 L78 276 L98 276 L108 204 Z" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M156 194 L162 276 L142 276 L132 204 Z" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-        <rect x="78" y="271" width="20" height="5" rx="2" fill="#0F172A" />
-        <rect x="142" y="271" width="20" height="5" rx="2" fill="#0F172A" />
-        <path d="M75 134 C68 159 72 199 76 209 C95 214 145 214 164 209 C168 199 172 159 165 134 Z" fill="#059669" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-        <path d="M92 179 C92 169 148 169 148 179 L145 202 C135 206 105 206 95 202 Z" fill="#047857" stroke="#18181B" strokeWidth="2" />
-        <path d="M110 136 Q105 152 108 162" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M128 136 Q135 152 132 162" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M102 130 Q125 154 140 132" fill="none" stroke="#F59E0B" strokeWidth="3.5" strokeLinecap="round" />
-        <polygon points="126,152 128,157 133,157 129,160 131,165 126,162 121,165 123,160 119,157 124,157" fill="#F59E0B" stroke="#B45309" strokeWidth="0.8" />
-        <path d="M75 136 Q50 110 46 88 Q56 80 65 92" fill="none" stroke="#543217" strokeWidth="12" strokeLinecap="round" />
-        <path d="M75 136 Q50 110 46 88 Q56 80 65 92" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M75 134 Q62 120 56 106" stroke="#059669" strokeWidth="15" strokeLinecap="round" />
-        <path d="M165 136 Q190 110 194 88 Q184 80 175 92" fill="none" stroke="#543217" strokeWidth="12" strokeLinecap="round" />
-        <path d="M165 136 Q190 110 194 88 Q184 80 175 92" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M165 134 Q178 120 184 106" stroke="#059669" strokeWidth="15" strokeLinecap="round" />
-        <rect x="112" y="112" width="16" height="24" fill="#543217" stroke="#18181B" strokeWidth="2" />
-        <g transform="rotate(-4 120 88)">
-          <circle cx="120" cy="88" r="30" fill="#543217" stroke="#18181B" strokeWidth="3" />
-          <circle cx="90" cy="88" r="6" fill="#543217" stroke="#18181B" strokeWidth="2" />
-          <circle cx="150" cy="88" r="6" fill="#543217" stroke="#18181B" strokeWidth="2" />
-          <circle cx="90" cy="90" r="1.8" fill="#F59E0B" />
-          <rect x="94" y="80" width="22" height="15" rx="3" fill="#0F172A" stroke="#18181B" strokeWidth="2" />
-          <rect x="124" y="80" width="22" height="15" rx="3" fill="#0F172A" stroke="#18181B" strokeWidth="2" />
-          <path d="M116 84 L124 84" stroke="#F59E0B" strokeWidth="2.5" />
-          <path d="M98 82 L104 94" stroke="#38BDF8" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M128 82 L134 94" stroke="#38BDF8" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M118 97 Q120 101 122 97" stroke="#3D2109" strokeWidth="2" strokeLinecap="round" />
-          <path d="M110 104 Q120 118 130 104 Z" fill="#E11D48" stroke="#18181B" strokeWidth="2" />
-          <path d="M112 104 Q120 110 128 104" fill="#FFFFFF" />
-          <ellipse cx="120" cy="62" rx="34" ry="12" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-          <path d="M92 72 C90 44 150 44 148 72 Z" fill="#0F172A" stroke="#18181B" strokeWidth="2.5" />
-          <path d="M110 70 Q120 64 130 70" stroke="#94A3B8" strokeWidth="2.5" />
-          <rect x="113" y="52" width="4.5" height="7" fill="#059669" />
-          <rect x="117.5" y="52" width="4.5" height="7" fill="#DC2626" />
-          <rect x="122" y="52" width="4.5" height="7" fill="#FACC15" />
-        </g>
-      </svg>
-    ) : (
-      <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-        <ellipse cx="120" cy="305" rx="58" ry="11" fill="#000000" fillOpacity="0.3" />
-        <path d="M72 292 C72 284 84 280 94 282 L96 298 C96 304 74 306 72 292 Z" fill="#FFFFFF" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M72 297 L95 297" stroke="#F43F5E" strokeWidth="3" />
-        <ellipse cx="76" cy="298" rx="3" ry="2" fill="#18181B" />
-        <path d="M144 282 C154 280 166 284 166 292 C164 306 142 304 142 298 L144 282 Z" fill="#FFFFFF" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M143 297 L166 297" stroke="#F43F5E" strokeWidth="3" />
-        <ellipse cx="162" cy="298" rx="3" ry="2" fill="#18181B" />
-        <path d="M84 200 L76 285 L96 285 L108 210 Z" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M156 200 L164 285 L144 285 L132 210 Z" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-        <rect x="76" y="280" width="20" height="5" rx="2" fill="#0F172A" />
-        <rect x="144" y="280" width="20" height="5" rx="2" fill="#0F172A" />
-        <path d="M75 140 C68 165 72 205 76 215 C95 220 145 220 164 215 C168 205 172 165 165 140 Z" fill="#059669" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-        <path d="M92 185 C92 175 148 175 148 185 L145 208 C135 212 105 212 95 208 Z" fill="#047857" stroke="#18181B" strokeWidth="2" />
-        <path d="M112 142 L110 168" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M128 142 L130 168" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M102 135 Q120 156 138 135" fill="none" stroke="#F59E0B" strokeWidth="3.5" strokeLinecap="round" />
-        <polygon points="120,154 122,159 127,159 123,162 125,167 120,164 115,167 117,162 113,159 118,159" fill="#F59E0B" stroke="#B45309" strokeWidth="0.8" />
-        <path d="M75 142 Q48 170 54 200 Q62 208 68 198" fill="none" stroke="#543217" strokeWidth="12" strokeLinecap="round" />
-        <path d="M75 142 Q48 170 54 200 Q62 208 68 198" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M75 140 Q62 155 58 172" stroke="#059669" strokeWidth="15" strokeLinecap="round" />
-        <path d="M165 142 Q192 165 186 195 Q176 200 172 190" fill="none" stroke="#543217" strokeWidth="12" strokeLinecap="round" />
-        <path d="M165 142 Q192 165 186 195 Q176 200 172 190" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M165 140 Q178 155 182 172" stroke="#059669" strokeWidth="15" strokeLinecap="round" />
-        <rect x="112" y="118" width="16" height="24" fill="#543217" stroke="#18181B" strokeWidth="2" />
-        <circle cx="120" cy="94" r="30" fill="#543217" stroke="#18181B" strokeWidth="3" />
-        <circle cx="90" cy="94" r="6" fill="#543217" stroke="#18181B" strokeWidth="2" />
-        <circle cx="150" cy="94" r="6" fill="#543217" stroke="#18181B" strokeWidth="2" />
-        <circle cx="90" cy="96" r="1.8" fill="#F59E0B" />
-        <rect x="94" y="86" width="22" height="15" rx="3" fill="#0F172A" stroke="#18181B" strokeWidth="2" />
-        <rect x="124" y="86" width="22" height="15" rx="3" fill="#0F172A" stroke="#18181B" strokeWidth="2" />
-        <path d="M116 90 L124 90" stroke="#F59E0B" strokeWidth="2.5" />
-        <path d="M98 88 L104 100" stroke="#38BDF8" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M128 88 L134 100" stroke="#38BDF8" strokeWidth="1.8" strokeLinecap="round" />
-        <path d="M118 103 Q120 107 122 103" stroke="#3D2109" strokeWidth="2" strokeLinecap="round" />
-        <path d="M114 112 Q122 117 129 110" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <ellipse cx="120" cy="68" rx="34" ry="12" fill="#1E293B" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M92 78 C90 50 150 50 148 78 Z" fill="#0F172A" stroke="#18181B" strokeWidth="2.5" />
-        <path d="M110 76 Q120 70 130 76" stroke="#94A3B8" strokeWidth="2.5" />
-        <rect x="113" y="58" width="4.5" height="7" fill="#059669" />
-        <rect x="117.5" y="58" width="4.5" height="7" fill="#DC2626" />
-        <rect x="122" y="58" width="4.5" height="7" fill="#FACC15" />
-      </svg>
-    )
-  }
-
-  // pa_buea
-  return isPoseB ? (
-    <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-      <ellipse cx="120" cy="305" rx="48" ry="9" fill="#000000" fillOpacity="0.25" />
-      <path d="M80 286 C76 284 72 292 76 297 C80 300 96 300 98 294 C98 289 88 286 80 286 Z" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M148 282 C144 280 140 288 144 293 C148 296 164 296 166 290 C166 285 156 282 148 282 Z" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M86 210 L80 288 L98 288 L108 220 Z" fill="#334155" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M154 210 L162 284 L144 284 L132 220 Z" fill="#334155" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M78 135 C70 165 72 210 76 225 C95 230 145 230 164 225 C168 210 170 165 162 135 Z" fill="#0369A1" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-      <rect x="117" y="135" width="6" height="55" fill="#FACC15" stroke="#B45309" strokeWidth="1" />
-      <circle cx="120" cy="145" r="2" fill="#451A03" />
-      <circle cx="120" cy="160" r="2" fill="#451A03" />
-      <circle cx="120" cy="175" r="2" fill="#451A03" />
-      <path d="M98 160 Q120 170 142 160" stroke="#FACC15" strokeWidth="2" strokeDasharray="4 3" />
-      <path d="M78 136 Q46 112 40 85 Q50 78 60 90" fill="none" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-      <path d="M78 136 Q46 112 40 85 Q50 78 60 90" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M78 134 Q62 118 56 102" stroke="#0369A1" strokeWidth="14" strokeLinecap="round" />
-      <path d="M162 136 Q192 115 198 88" fill="none" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-      <path d="M162 136 Q192 115 198 88" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M162 134 Q178 118 185 102" stroke="#0369A1" strokeWidth="14" strokeLinecap="round" />
-      <circle cx="198" cy="88" r="6" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <line x1="198" y1="88" x2="225" y2="28" stroke="#92400E" strokeWidth="5" strokeLinecap="round" />
-      <path d="M225 28 C228 20 236 22 235 30" fill="none" stroke="#F59E0B" strokeWidth="5" strokeLinecap="round" />
-      <rect x="112" y="112" width="16" height="24" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <g transform="rotate(5 120 88)">
-        <circle cx="120" cy="88" r="30" fill="#6B4423" stroke="#18181B" strokeWidth="3" />
-        <circle cx="90" cy="89" r="6.5" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <circle cx="150" cy="89" r="6.5" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-        <circle cx="106" cy="84" r="10" fill="#FFFFFF" fillOpacity="0.2" stroke="#F59E0B" strokeWidth="2.2" />
-        <circle cx="134" cy="84" r="10" fill="#FFFFFF" fillOpacity="0.2" stroke="#F59E0B" strokeWidth="2.2" />
-        <line x1="116" y1="84" x2="124" y2="84" stroke="#F59E0B" strokeWidth="2.2" />
-        <line x1="96" y1="84" x2="90" y2="87" stroke="#F59E0B" strokeWidth="1.8" />
-        <line x1="144" y1="84" x2="150" y2="87" stroke="#F59E0B" strokeWidth="1.8" />
-        <path d="M102 85 Q106 80 110 85" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M130 85 Q134 80 138 85" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M98 71 Q106 66 114 71" fill="none" stroke="#E2E8F0" strokeWidth="3" strokeLinecap="round" />
-        <path d="M126 71 Q134 66 142 71" fill="none" stroke="#E2E8F0" strokeWidth="3" strokeLinecap="round" />
-        <path d="M117 90 Q120 96 123 90" stroke="#451A03" strokeWidth="2.5" strokeLinecap="round" />
-        <path d="M106 97 Q120 95 134 97 Q120 106 106 97 Z" fill="#E2E8F0" stroke="#18181B" strokeWidth="1.8" />
-        <path d="M115 112 Q120 120 125 112 Z" fill="#E2E8F0" stroke="#18181B" strokeWidth="1.5" />
-        <path d="M110 102 Q120 118 130 102 Z" fill="#E11D48" stroke="#18181B" strokeWidth="2" />
-        <rect x="117" y="102" width="3" height="3" fill="#F59E0B" />
-        <path d="M86 72 C80 44 140 39 158 62 C164 68 150 76 86 72 Z" fill="#78350F" stroke="#18181B" strokeWidth="2.8" />
-        <path d="M92 72 C115 78 150 74 156 68" fill="none" stroke="#451A03" strokeWidth="4" strokeLinecap="round" />
-        <circle cx="122" cy="48" r="3" fill="#451A03" />
-      </g>
-    </svg>
-  ) : (
-    <svg viewBox="0 0 240 320" className="w-full h-full drop-shadow-[0_15px_15px_rgba(0,0,0,0.6)]">
-      <ellipse cx="120" cy="305" rx="56" ry="10" fill="#000000" fillOpacity="0.28" />
-      <path d="M82 292 C78 290 74 298 78 303 C82 306 98 306 100 300 C100 295 90 292 82 292 Z" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M142 292 C138 290 134 298 138 303 C142 306 158 306 160 300 C160 295 150 292 142 292 Z" fill="#451A03" stroke="#18181B" strokeWidth="2.5" />
-      <ellipse cx="180" cy="304" rx="4" ry="2" fill="#78350F" stroke="#18181B" strokeWidth="1.5" />
-      <path d="M86 215 L82 294 L100 294 L108 225 Z" fill="#334155" stroke="#18181B" strokeWidth="2.5" />
-      <path d="M154 215 L158 294 L140 294 L132 225 Z" fill="#334155" stroke="#18181B" strokeWidth="2.5" />
-      <line x1="180" y1="304" x2="175" y2="185" stroke="#92400E" strokeWidth="5" strokeLinecap="round" />
-      <path d="M175 185 C175 178 185 174 190 180" fill="none" stroke="#F59E0B" strokeWidth="5" strokeLinecap="round" />
-      <path d="M78 140 C70 170 72 215 76 230 C95 235 145 235 164 230 C168 215 170 170 162 140 Z" fill="#0369A1" stroke="#18181B" strokeWidth="3" strokeLinejoin="round" />
-      <rect x="117" y="140" width="6" height="55" fill="#FACC15" stroke="#B45309" strokeWidth="1" />
-      <circle cx="120" cy="150" r="2" fill="#451A03" />
-      <circle cx="120" cy="165" r="2" fill="#451A03" />
-      <circle cx="120" cy="180" r="2" fill="#451A03" />
-      <path d="M98 165 Q120 175 142 165" stroke="#FACC15" strokeWidth="2" strokeDasharray="4 3" />
-      <path d="M78 142 Q52 170 56 195 Q64 202 70 192" fill="none" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-      <path d="M78 142 Q52 170 56 195 Q64 202 70 192" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M78 140 Q64 158 60 175" stroke="#0369A1" strokeWidth="14" strokeLinecap="round" />
-      <path d="M162 142 Q185 162 176 182" fill="none" stroke="#6B4423" strokeWidth="12" strokeLinecap="round" />
-      <path d="M162 142 Q185 162 176 182" fill="none" stroke="#18181B" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M162 140 Q175 158 174 175" stroke="#0369A1" strokeWidth="14" strokeLinecap="round" />
-      <circle cx="175" cy="182" r="6" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <rect x="112" y="118" width="16" height="24" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <circle cx="120" cy="94" r="30" fill="#6B4423" stroke="#18181B" strokeWidth="3" />
-      <circle cx="90" cy="95" r="6.5" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <circle cx="150" cy="95" r="6.5" fill="#6B4423" stroke="#18181B" strokeWidth="2" />
-      <circle cx="106" cy="90" r="10" fill="#FFFFFF" fillOpacity="0.2" stroke="#F59E0B" strokeWidth="2.2" />
-      <circle cx="134" cy="90" r="10" fill="#FFFFFF" fillOpacity="0.2" stroke="#F59E0B" strokeWidth="2.2" />
-      <line x1="116" y1="90" x2="124" y2="90" stroke="#F59E0B" strokeWidth="2.2" />
-      <line x1="96" y1="90" x2="90" y2="93" stroke="#F59E0B" strokeWidth="1.8" />
-      <line x1="144" y1="90" x2="150" y2="93" stroke="#F59E0B" strokeWidth="1.8" />
-      <ellipse cx="106" cy="90" rx="3" ry="4" fill="#18181B" />
-      <circle cx="107" cy="89" r="1.2" fill="#FFFFFF" />
-      <ellipse cx="134" cy="90" rx="3" ry="4" fill="#18181B" />
-      <circle cx="135" cy="89" r="1.2" fill="#FFFFFF" />
-      <path d="M98 77 Q106 72 114 77" fill="none" stroke="#E2E8F0" strokeWidth="3" strokeLinecap="round" />
-      <path d="M126 77 Q134 72 142 77" fill="none" stroke="#E2E8F0" strokeWidth="3" strokeLinecap="round" />
-      <path d="M117 96 Q120 102 123 96" stroke="#451A03" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M106 104 Q120 102 134 104 Q120 114 106 104 Z" fill="#E2E8F0" stroke="#18181B" strokeWidth="1.8" />
-      <path d="M115 116 Q120 126 125 116 Z" fill="#E2E8F0" stroke="#18181B" strokeWidth="1.5" />
-      <path d="M112 110 Q120 115 128 110" fill="none" stroke="#18181B" strokeWidth="2" strokeLinecap="round" />
-      <path d="M86 78 C80 50 140 45 158 68 C164 74 150 82 86 78 Z" fill="#78350F" stroke="#18181B" strokeWidth="2.8" />
-      <path d="M92 78 C115 84 150 80 156 74" fill="none" stroke="#451A03" strokeWidth="4" strokeLinecap="round" />
-      <circle cx="122" cy="54" r="3" fill="#451A03" />
-    </svg>
-  )
-}
-
-// -------------------------------------------------------------
-// Main StagePlayer Component
+// 3. Main StagePlayer Component (Puppet-Rigged 60fps Stage)
 // -------------------------------------------------------------
 
 export const StagePlayer: React.FC<StagePlayerProps> = ({
   characterId,
-  backgroundTheme = 'sage_starburst',
+  characterAId,
+  characterBId,
+  backgroundTheme = 'street_buea',
+  bgMotion = 'static',
+  prop = 'none',
   movesTimeline = [],
   bpm = 110,
   currentTime = 0,
   isPlaying = false,
   caption,
+  captionA,
+  captionB,
   sticker,
   onStickerTap,
-  showControls = false,
   onTogglePlay,
   onSeek,
-  duration = 24,
-  className = '',
+  duration,
   aspectRatio = 'aspect-[16/10]',
   mode = 'studio',
   audioElement = null,
+  className = '',
 }) => {
-  const normChar = normalizeCharacterId(characterId)
-  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
+  const normCharA = normalizeCharacterId(characterAId || characterId || 'tantie')
+  const normCharB = characterBId && characterBId !== 'none' ? normalizeCharacterId(characterBId) : null
+  const hasCharB = Boolean(normCharB)
+
   const [rafTime, setRafTime] = useState(0)
 
-  // Auto-fading reaction sticker state (Issue 1: 1.5s auto-fade)
+  // Auto-fading reaction sticker state (1.5s auto-fade)
   const [visibleSticker, setVisibleSticker] = useState<string | null>(sticker || null)
   const [stickerFading, setStickerFading] = useState(false)
 
@@ -581,6 +435,26 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     }
   }, [sticker])
 
+  // Determine cropped audio window from movesTimeline (NFR-2, FR-20 - FR-24)
+  const clipStart = useMemo(() => {
+    if (movesTimeline && movesTimeline.length > 0 && typeof movesTimeline[0].start === 'number') {
+      return movesTimeline[0].start
+    }
+    return 0
+  }, [movesTimeline])
+
+  const clipEnd = useMemo(() => {
+    if (movesTimeline && movesTimeline.length > 0) {
+      const last = movesTimeline[movesTimeline.length - 1]
+      if (typeof last.end === 'number' && last.end > clipStart) {
+        return last.end
+      }
+    }
+    return duration || 24
+  }, [movesTimeline, clipStart, duration])
+
+  const clipDuration = Math.max(clipEnd - clipStart, 0.5)
+
   // Sync to HTML5 <audio>.currentTime via requestAnimationFrame for buttery 60fps responsiveness
   useEffect(() => {
     if (!isPlaying || !audioElement) return
@@ -588,7 +462,24 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     let rafId: number
     const loop = () => {
       if (audioElement && !isNaN(audioElement.currentTime)) {
-        setRafTime(audioElement.currentTime)
+        const cur = audioElement.currentTime
+        if (cur >= clipEnd) {
+          if (mode === 'studio') {
+            audioElement.currentTime = clipStart
+            setRafTime(clipStart)
+          } else {
+            audioElement.pause()
+            audioElement.currentTime = clipStart
+            setRafTime(clipStart)
+            if (onTogglePlay) onTogglePlay()
+            return
+          }
+        } else if (cur < clipStart - 0.25) {
+          audioElement.currentTime = clipStart
+          setRafTime(clipStart)
+        } else {
+          setRafTime(cur)
+        }
       }
       rafId = requestAnimationFrame(loop)
     }
@@ -597,310 +488,265 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     return () => {
       cancelAnimationFrame(rafId)
     }
-  }, [isPlaying, audioElement])
+  }, [isPlaying, audioElement, clipStart, clipEnd, mode, onTogglePlay])
 
   // Effective time used for rhythm & moves
   const effectiveTime = isPlaying && audioElement ? rafTime : currentTime
 
-  // Continuous BPM duration (FR-20, FR-21, Issue 2)
+  // Continuous BPM duration
   const safeBpm = Math.max(bpm || 110, 40)
-  const beatDuration = useMemo(() => 60 / safeBpm, [safeBpm])
   const halfBeatDuration = useMemo(() => 30 / safeBpm, [safeBpm])
   const halfBeatIndex = Math.floor(effectiveTime / halfBeatDuration)
   const isPoseB = isPlaying ? halfBeatIndex % 2 === 1 : false
 
-  // Active move determination from movesTimeline
-  const activeMove = useMemo(() => {
-    if (!movesTimeline || movesTimeline.length === 0) return 'sway'
-    const found = movesTimeline.find(
-      (m) => effectiveTime >= m.start && effectiveTime < m.end
+  // Active scene block determination from movesTimeline
+  const activeBlock = useMemo(() => {
+    if (!movesTimeline || movesTimeline.length === 0) return null
+    return (
+      movesTimeline.find((m) => effectiveTime >= m.start && effectiveTime < m.end) ||
+      movesTimeline[0]
     )
-    return (found?.action || 'sway').toLowerCase()
   }, [movesTimeline, effectiveTime])
 
-  // Render Background Theme
-  const renderBackground = () => {
-    switch (backgroundTheme) {
-      case 'amber_sunset':
-        return <AmberSunsetBackground isPlaying={isPlaying} bpm={bpm} />
-      case 'slate_night':
-        return <SlateNightBackground isPlaying={isPlaying} bpm={bpm} />
-      case 'lavender_haze':
-        return <LavenderHazeBackground isPlaying={isPlaying} bpm={bpm} />
-      case 'sage_starburst':
-      default:
-        return <SageStarburstBackground isPlaying={isPlaying} bpm={bpm} />
-    }
-  }
+  // Extract Scene Properties
+  const actionA: string = (activeBlock?.charA_action || activeBlock?.action || 'approach')
+  const actionB: string = (activeBlock?.charB_action || (hasCharB ? 'turn_around' : 'none'))
+  const activeBg: StoryBackground | string = (activeBlock?.bg || backgroundTheme || 'street_buea')
+  const activeBgMotion: BgMotion = (activeBlock?.bgMotion || bgMotion || 'static')
+  const activeProp: StoryProp | string = (activeBlock?.prop || prop || 'none')
+  const dialogueA: string | undefined = activeBlock?.dialogueA || captionA || (!activeBlock?.dialogueB ? caption : undefined)
+  const dialogueB: string | undefined = activeBlock?.dialogueB || captionB
 
-  // Format seconds to mm:ss
-  const formatTime = (secs: number) => {
-    const s = Math.max(0, Math.floor(secs))
-    const m = Math.floor(s / 60)
-    const rem = s % 60
-    return `${m}:${rem < 10 ? '0' : ''}${rem}`
+  // Sound Effects (SFX) trigger once on block entry
+  const lastPlayedSFXBlockRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!isPlaying || !activeBlock) return
+    const blockIndex = movesTimeline ? movesTimeline.indexOf(activeBlock) : -1
+    if (blockIndex !== -1 && blockIndex !== lastPlayedSFXBlockRef.current) {
+      lastPlayedSFXBlockRef.current = blockIndex
+      if (activeBlock.sfx && activeBlock.sfx !== 'none') {
+        storySFX.play(activeBlock.sfx as StorySFX)
+      }
+    }
+  }, [isPlaying, activeBlock, movesTimeline])
+
+  // Compute smooth Framer Motion stage coordinate glides & rotations for Lottie positioning wrappers
+  const motionA = useMemo(() => {
+    return getLottieStageMotion(actionA, false, isPoseB)
+  }, [actionA, isPoseB])
+
+  const motionB = useMemo(() => {
+    return getLottieStageMotion(actionB, true, isPoseB)
+  }, [actionB, isPoseB])
+
+  // Render Background Environment
+  const renderBackground = () => {
+    switch (activeBg) {
+      case 'living_room':
+        return <LivingRoomBackground />
+      case 'chop_house':
+        return <ChopHouseBackground />
+      case 'park_sunset':
+        return <ParkSunsetBackground isPlaying={isPlaying} bgMotion={activeBgMotion} />
+      case 'sage_starburst':
+        return <SageStarburstBackground />
+      case 'amber_sunset':
+        return <AmberSunsetBackground />
+      case 'slate_night':
+        return <SlateNightBackground />
+      case 'lavender_haze':
+        return <LavenderHazeBackground />
+      case 'street_buea':
+      default:
+        return <StreetBueaBackground isPlaying={isPlaying} bgMotion={activeBgMotion} />
+    }
   }
 
   return (
     <div
       className={`relative w-full ${aspectRatio} rounded-3xl overflow-hidden shadow-2xl border border-white/10 select-none group ${className}`}
     >
-      {/* 0. Scoped 2D Music Video Keyframe Animations (Issue 2) */}
+      {/* 0. Scoped CSS Animations for Parallax Scrolling & Camera Zoom */}
       <style>{`
-        .stage-dance-sway {
-          animation: stage-sway calc(var(--beat-duration, 0.54s) * 2) ease-in-out infinite;
-          transform-origin: bottom center;
+        @keyframes buea-scroll-left {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(-50%, 0, 0); }
         }
-        @keyframes stage-sway {
-          0%, 100% {
-            transform: rotate(-6deg) translateY(0px);
-          }
-          50% {
-            transform: rotate(6deg) translateY(-6px);
-          }
+        @keyframes buea-scroll-right {
+          0% { transform: translate3d(-50%, 0, 0); }
+          100% { transform: translate3d(0, 0, 0); }
         }
-
-        .stage-dance-stomp {
-          animation: stage-stomp var(--beat-duration, 0.54s) cubic-bezier(0.25, 1, 0.5, 1) infinite;
-          transform-origin: bottom center;
-        }
-        @keyframes stage-stomp {
-          0%, 100% {
-            transform: translateY(0px) scale(1, 1);
-          }
-          30% {
-            transform: translateY(-14px) scale(0.98, 1.04);
-          }
-          60% {
-            transform: translateY(2px) scale(1.05, 0.95);
-          }
-          80% {
-            transform: translateY(0px) scale(1, 1);
-          }
-        }
-
-        .stage-dance-jump {
-          animation: stage-jump var(--beat-duration, 0.54s) cubic-bezier(0.22, 1, 0.36, 1) infinite;
-          transform-origin: bottom center;
-        }
-        @keyframes stage-jump {
-          0%, 100% {
-            transform: translateY(0px) scale(1, 1);
-          }
-          15% {
-            transform: translateY(3px) scale(1.04, 0.94);
-          }
-          50% {
-            transform: translateY(-26px) scale(0.96, 1.04);
-          }
-          75% {
-            transform: translateY(2px) scale(1.05, 0.95);
-          }
-        }
-
-        .stage-dance-flex {
-          animation: stage-flex calc(var(--beat-duration, 0.54s) * 2) ease-in-out infinite;
-          transform-origin: bottom center;
-        }
-        @keyframes stage-flex {
-          0%, 100% {
-            transform: translateX(-6px) rotate(-4deg);
-          }
-          50% {
-            transform: translateX(6px) rotate(4deg);
-          }
-        }
-
-        .stage-dance-idle {
-          animation: stage-idle 2.4s ease-in-out infinite;
-          transform-origin: bottom center;
-        }
-        @keyframes stage-idle {
-          0%, 100% {
-            transform: translateY(0px);
-          }
-          50% {
-            transform: translateY(-3px);
-          }
+        @keyframes street-clouds {
+          0% { transform: translate3d(0, 0, 0); }
+          100% { transform: translate3d(-50%, 0, 0); }
         }
       `}</style>
 
-      {/* 1. Theme Stage Background (Pure CSS + SVG, NFR-2) */}
-      {renderBackground()}
+      {/* Camera Zoom Stage Wrapper */}
+      <div
+        className={`relative w-full h-full transition-transform duration-700 ease-out origin-center ${
+          activeBgMotion === 'zoom_in' ? 'scale-[1.14]' : 'scale-100'
+        }`}
+      >
+        {/* 1. Theme Story Background */}
+        {renderBackground()}
 
-      {/* 2. Top-Left Bar Details: Character, BPM & Move Pill (Issue 1) */}
-      <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 pointer-events-none">
-        <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] font-semibold text-white border border-white/10 shadow">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="capitalize">{normChar.replace('_', ' ')}</span>
-          <span className="text-neutral-400">·</span>
-          <span className="font-mono text-[#FACC15]">{bpm} BPM</span>
+        {/* 2. Scene Center Prop (SVG Overlay) */}
+        <ScenePropOverlay prop={activeProp} />
+
+        {/* 3. Top Centered Mini Pill (BPM + Scene Action) */}
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 pointer-events-none">
+          <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10 shadow">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="capitalize">{normCharA.replace('_', ' ')}</span>
+            {normCharB && (
+              <>
+                <span className="text-neutral-400">&</span>
+                <span className="capitalize">{normCharB.replace('_', ' ')}</span>
+              </>
+            )}
+            <span className="text-neutral-400">·</span>
+            <span className="font-mono text-[#FACC15]">{bpm} BPM</span>
+          </div>
+
+          {isPlaying && (
+            <div className="px-2 py-0.5 rounded-full bg-neutral-900/80 backdrop-blur-md text-[9px] font-bold text-white uppercase tracking-wider border border-[#F43F5E]/40 flex items-center gap-1 shadow">
+              <span className="text-[#F43F5E]">✦</span>
+              <span>{actionA}</span>
+            </div>
+          )}
         </div>
 
-        {/* Current Move Pill */}
-        {isPlaying && (
-          <div className="px-2.5 py-1 rounded-full bg-neutral-900/80 backdrop-blur-md text-[10px] font-bold text-white uppercase tracking-wider border border-[#F43F5E]/40 flex items-center gap-1 shadow">
-            <span className="text-[#F43F5E]">✦</span>
-            <span>{activeMove}</span>
+        {/* 4. Comic Speech Dialogue A: Top-Left (Tail pointing down-left toward Character A) */}
+        {dialogueA && dialogueA.trim().length > 0 && (
+          <div className="absolute top-2.5 left-3 max-w-[44%] z-20 flex flex-col items-start pointer-events-none animate-comic-pop">
+            <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-left tracking-tight leading-snug">
+              "{dialogueA}"
+              {/* Tail pointing down-left */}
+              <svg className="absolute -bottom-2.5 left-3 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
+                <path d="M0 0 L16 0 L4 14 Z" />
+              </svg>
+              <svg className="absolute -bottom-2 left-3.5 w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
+                <path d="M0 0 L14 0 L3 12 Z" />
+              </svg>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* 3. Comic Speech Bubble / Caption: Pinned to Top-Right Corner (Issue 1, FR-23) */}
-      {caption && caption.trim().length > 0 && (
-        <div className="absolute top-3 right-3 max-w-[42%] z-20 flex flex-col items-end pointer-events-none animate-comic-pop">
-          <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-right tracking-tight leading-snug">
-            "{caption}"
-            {/* Comic Speech Bubble Tail pointing down-left toward center character */}
-            <svg
-              className="absolute -bottom-2.5 left-2.5 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none"
-              viewBox="0 0 16 14"
-              fill="currentColor"
-            >
-              <path d="M0 0 L16 0 L4 14 Z" />
-            </svg>
-            <svg
-              className="absolute -bottom-2 left-3 w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none"
-              viewBox="0 0 14 12"
-              fill="currentColor"
-            >
-              <path d="M0 0 L14 0 L3 12 Z" />
-            </svg>
-          </div>
-        </div>
-      )}
-
-      {/* 4. Reaction Stickers (Issue 1): Bottom-Left with 1.5s Auto-Fade */}
-      {visibleSticker && (
-        <div
-          onClick={() => onStickerTap && onStickerTap(visibleSticker)}
-          className={`absolute bottom-3 left-3 z-30 transition-all duration-300 ease-out pointer-events-auto cursor-pointer ${
-            stickerFading
-              ? 'opacity-0 scale-90 translate-y-2'
-              : 'opacity-100 scale-100 animate-comic-pop'
-          }`}
-        >
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FACC15] text-neutral-950 font-black text-xs sm:text-sm border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] rotate-[-3deg] hover:scale-105 active:scale-95 transition-transform">
-            <span className="text-sm">🔥</span>
-            <span>{visibleSticker}</span>
-          </div>
-        </div>
-      )}
-
-      {/* 5. 2-Pose Character Stage Arena: Anchored cleanly in center-bottom (z-10, pt-10, Issue 1 & 2) */}
-      <div className="absolute inset-0 z-10 flex items-end justify-center pt-10 pb-4 sm:pb-6 pointer-events-none">
-        <div
-          className={`relative h-full max-h-[84%] max-w-[280px] aspect-[1179/3291] flex items-end justify-center ${
-            isPlaying ? `stage-dance-${activeMove}` : 'stage-dance-idle'
-          }`}
-          style={{
-            transformOrigin: 'bottom center',
-            transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-            // Custom CSS properties driving smooth BPM keyframes
-            ['--beat-duration' as any]: `${beatDuration}s`,
-            ['--bpm' as any]: `${bpm}`,
-          }}
-        >
-          {/* Persistent Character Container (Issue 2: Zero remounting/reloading) */}
-          {!failedImages[normChar] ? (
-            <div className="relative w-full h-full flex items-end justify-center overflow-visible">
-              {/* Persistent Pose A */}
-              <img
-                src={`/assets/characters/${normChar}_pose_a.svg`}
-                alt={`${normChar} pose A`}
-                onError={() => setFailedImages((prev) => ({ ...prev, [normChar]: true }))}
-                className={`w-full h-full object-contain object-bottom filter drop-shadow-[0_12px_14px_rgba(0,0,0,0.7)] transition-opacity duration-150 ease-in-out ${
-                  isPoseB ? 'opacity-0 pointer-events-none absolute inset-0' : 'opacity-100 relative'
-                }`}
-              />
-              {/* Persistent Pose B */}
-              <img
-                src={`/assets/characters/${normChar}_pose_b.svg`}
-                alt={`${normChar} pose B`}
-                onError={() => setFailedImages((prev) => ({ ...prev, [normChar]: true }))}
-                className={`w-full h-full object-contain object-bottom filter drop-shadow-[0_12px_14px_rgba(0,0,0,0.7)] transition-opacity duration-150 ease-in-out ${
-                  isPoseB ? 'opacity-100 relative' : 'opacity-0 pointer-events-none absolute inset-0'
-                }`}
-              />
+        {/* 5. Comic Speech Dialogue B: Top-Right (Tail pointing down-right toward Character B) */}
+        {dialogueB && dialogueB.trim().length > 0 && (
+          <div className="absolute top-2.5 right-3 max-w-[44%] z-20 flex flex-col items-end pointer-events-none animate-comic-pop">
+            <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-right tracking-tight leading-snug">
+              "{dialogueB}"
+              {/* Tail pointing down-right */}
+              <svg className="absolute -bottom-2.5 right-3 w-4 h-3.5 text-neutral-950 rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
+                <path d="M0 0 L16 0 L12 14 Z" />
+              </svg>
+              <svg className="absolute -bottom-2 right-3.5 w-3.5 h-3 text-white rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
+                <path d="M0 0 L14 0 L11 12 Z" />
+              </svg>
             </div>
-          ) : (
-            <InlineCharacterSVG character={normChar} isPoseB={isPoseB} />
-          )}
+          </div>
+        )}
 
-          {/* Jump / Air Shadow effect */}
-          {activeMove === 'jump' && isPlaying && (
-            <div
-              className={`absolute -bottom-2 w-28 h-3.5 rounded-full bg-black/40 blur-sm transition-all duration-100 ${
-                isPoseB ? 'scale-75 opacity-25' : 'scale-105 opacity-50'
-              }`}
+        {/* 6. Reaction Sticker: Bottom-Left (1.5s Auto-Fade) */}
+        {visibleSticker && (
+          <div
+            onClick={() => onStickerTap && onStickerTap(visibleSticker)}
+            className={`absolute bottom-3 left-3 z-30 transition-all duration-300 ease-out pointer-events-auto cursor-pointer ${
+              stickerFading ? 'opacity-0 scale-90 translate-y-2' : 'opacity-100 scale-100 animate-comic-pop'
+            }`}
+          >
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FACC15] text-neutral-950 font-black text-xs sm:text-sm border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] rotate-[-3deg] hover:scale-105 active:scale-95 transition-transform">
+              <span className="text-sm">🔥</span>
+              <span>{visibleSticker}</span>
+            </div>
+          </div>
+        )}
+
+        {/* 7. Character Stage Arena: Persistent 60fps Lottie & Spring Kinematics Characters */}
+        <div className="absolute inset-0 z-10 flex items-end justify-center pt-10 pb-3 sm:pb-4 pointer-events-none overflow-hidden">
+          {/* CHARACTER A (Left side in 2-char mode, or centered in solo mode) */}
+          <motion.div
+            className={`absolute bottom-3 sm:bottom-4 flex items-end justify-center ${
+              hasCharB
+                ? 'left-[8%] sm:left-[14%] w-36 sm:w-48 md:w-56 h-[74%] sm:h-[84%]'
+                : 'left-1/2 -translate-x-1/2 w-44 sm:w-56 md:w-64 h-[76%] sm:h-[86%]'
+            }`}
+            animate={{
+              x: motionA.x,
+              y: motionA.y,
+              rotate: motionA.rotate,
+              scaleX: motionA.scaleX,
+            }}
+            transition={LOTTIE_STAGE_SPRING}
+            style={{ transformOrigin: 'bottom center' }}
+          >
+            <LottieCharacter
+              characterId={normCharA}
+              action={actionA}
+              facingLeft={false}
+              isPoseB={isPoseB}
+              prop={activeProp}
+              isPlaying={isPlaying}
+              className="w-full h-full"
             />
+          </motion.div>
+
+          {/* CHARACTER B (Right side, facing left) */}
+          {hasCharB && normCharB && (
+            <motion.div
+              className="absolute bottom-3 sm:bottom-4 right-[8%] sm:right-[14%] w-36 sm:w-48 md:w-56 h-[74%] sm:h-[84%] flex items-end justify-center"
+              animate={{
+                x: motionB.x,
+                y: motionB.y,
+                rotate: motionB.rotate,
+                scaleX: motionB.scaleX,
+              }}
+              transition={LOTTIE_STAGE_SPRING}
+              style={{ transformOrigin: 'bottom center' }}
+            >
+              <LottieCharacter
+                characterId={normCharB}
+                action={actionB}
+                facingLeft={true}
+                isPoseB={isPoseB}
+                prop={activeProp}
+                isPlaying={isPlaying}
+                className="w-full h-full"
+              />
+            </motion.div>
           )}
         </div>
       </div>
 
-      {/* 6. Playback Mode Click Overlay for Feed / Previews */}
+      {/* 8. Playback Mode Click Overlay for Feed / Previews */}
       {mode === 'playback' && !isPlaying && (
         <div
-          onClick={onTogglePlay}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (onSeek) onSeek(clipStart)
+            if (onTogglePlay) onTogglePlay()
+          }}
           className="absolute inset-0 z-30 bg-black/35 hover:bg-black/20 transition-all flex items-center justify-center cursor-pointer group/btn"
         >
-          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white/95 text-neutral-950 flex items-center justify-center shadow-2xl group-hover/btn:scale-110 group-active/btn:scale-95 transition-transform">
-            <svg className="w-6 h-6 sm:w-7 sm:h-7 fill-current translate-x-0.5" viewBox="0 0 24 24">
+          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/90 group-hover/btn:bg-white text-neutral-950 flex items-center justify-center shadow-2xl group-hover/btn:scale-110 active:scale-95 transition-transform">
+            <svg className="w-8 h-8 sm:w-10 sm:h-10 fill-current translate-x-1" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
           </div>
         </div>
       )}
 
-      {/* 6. Built-in Transport Controls (Optional or Studio Bar) */}
-      {showControls && (
-        <div className="absolute bottom-0 left-0 right-0 z-40 p-3 bg-gradient-to-t from-black/90 via-black/60 to-transparent flex flex-col gap-2">
-          {/* Progress Bar / Scrubber */}
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={0}
-              max={duration || 24}
-              step={0.1}
-              value={effectiveTime}
-              onChange={(e) => onSeek && onSeek(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-[#F43F5E]"
-            />
-          </div>
-
-          <div className="flex items-center justify-between text-xs text-white">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onTogglePlay}
-                className="w-8 h-8 rounded-full bg-white text-neutral-950 flex items-center justify-center hover:scale-105 active:scale-95 transition shadow cursor-pointer"
-              >
-                {isPlaying ? (
-                  <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
-                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3.5 h-3.5 fill-current translate-x-0.5" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-              <span className="font-mono text-[11px] text-neutral-300">
-                {formatTime(effectiveTime)} / {formatTime(duration)}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-semibold">
-                Theme:
-              </span>
-              <span className="text-[11px] font-bold text-[#FACC15] capitalize">
-                {backgroundTheme.replace('_', ' ')}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 9. Cropped Audio Window Progress Bar (subtle indicator) */}
+      <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/60 z-30 overflow-hidden pointer-events-none">
+        <div
+          className="h-full bg-gradient-to-r from-[#536D56] via-[#FACC15] to-[#F43F5E] transition-all duration-75"
+          style={{
+            width: `${Math.min(100, Math.max(0, ((effectiveTime - clipStart) / clipDuration) * 100))}%`,
+          }}
+        />
+      </div>
     </div>
   )
 }

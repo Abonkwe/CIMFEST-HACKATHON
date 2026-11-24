@@ -37,10 +37,57 @@ export interface Song {
   created_at?: string
 }
 
+export type StoryAction =
+  | 'walk_in'
+  | 'approach'
+  | 'walk_away'
+  | 'turn_around'
+  | 'slip_fall'
+  | 'kneel'
+  | 'wave_happy'
+  | 'shocked'
+  | 'angry_argue'
+  | 'cry_sad'
+  | 'laugh'
+  | 'celebrate'
+  // Legacy dance moves
+  | 'sway'
+  | 'stomp'
+  | 'jump'
+  | 'flex'
+
+export type StoryBackground =
+  | 'street_buea'
+  | 'living_room'
+  | 'chop_house'
+  | 'park_sunset'
+  // Legacy swatches
+  | 'sage_starburst'
+  | 'amber_sunset'
+  | 'slate_night'
+  | 'lavender_haze'
+
+export type BgMotion = 'static' | 'scroll_left' | 'scroll_right' | 'zoom_in'
+
+export type StoryProp = 'none' | 'phone' | 'gift_box' | 'table' | 'car'
+
+export type StorySFX = 'none' | 'phone_ding' | 'gasp' | 'comedy_slip' | 'applause'
+
 export interface MoveBlock {
   start: number
   end: number
   action: string
+  // Interactive storytelling scene metadata (backward-compatible)
+  charA_action?: StoryAction | string
+  charB_action?: StoryAction | string
+  charA_id?: string
+  charB_id?: string
+  bg?: StoryBackground | string
+  bgMotion?: BgMotion
+  prop?: StoryProp
+  sfx?: StorySFX
+  dialogueA?: string
+  dialogueB?: string
 }
 
 export interface Creation {

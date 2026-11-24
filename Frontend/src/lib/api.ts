@@ -6,6 +6,7 @@ import type {
   Song,
   User,
 } from '../types'
+import { KOCEE_DEMO_SONG, KOCEE_DEMO_CHALLENGE } from './storyTemplates'
 
 export function getApiBaseUrl(): string {
   const envUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -102,17 +103,54 @@ export async function fetchChallengeById(challengeId: string, tab: 'top' | 'risi
   }
 }
 
+function getLocalCreations(): Creation[] {
+  try {
+    const raw = localStorage.getItem('beattoons_local_creations')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch {
+    // ignore
+  }
+  return []
+}
+
+function saveLocalCreation(creation: Creation) {
+  try {
+    const existing = getLocalCreations()
+    const updated = [creation, ...existing.filter((c) => c.id !== creation.id)]
+    localStorage.setItem('beattoons_local_creations', JSON.stringify(updated.slice(0, 20)))
+  } catch {
+    // ignore
+  }
+}
+
 export async function fetchFeed(): Promise<Creation[]> {
+  let list: Creation[] = []
   try {
     const res = await fetch(`${API_BASE}/feed`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) return data
-    return getFallbackCreations()
+    if (res.ok) {
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        list = data
+      }
+    }
   } catch (err) {
     console.warn('Using fallback feed creations:', err)
-    return getFallbackCreations()
   }
+
+  if (list.length === 0) {
+    list = getFallbackCreations()
+  }
+
+  // Prepend locally created animations so creators see their work instantly
+  const locals = getLocalCreations()
+  if (locals.length > 0) {
+    list = [...locals, ...list.filter((c) => !locals.some((l) => l.id === c.id))]
+  }
+
+  return list
 }
 
 export async function recordCreationView(creationId: string): Promise<{ views: number }> {
@@ -154,16 +192,47 @@ export async function submitCreation(
   },
   token: string
 ): Promise<Creation> {
-  const res = await fetch(`${API_BASE}/creations`, {
-    method: 'POST',
-    headers: getHeaders(token),
-    body: JSON.stringify(data),
-  })
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}))
-    throw new Error(errData.detail || 'Failed to submit creation')
+  let res: Response | null = null
+  try {
+    res = await fetch(`${API_BASE}/creations`, {
+      method: 'POST',
+      headers: getHeaders(token),
+      body: JSON.stringify(data),
+    })
+  } catch (err) {
+    console.warn('Network error when submitting creation:', err)
   }
-  return res.json()
+
+  if (res && res.ok) {
+    const created: Creation = await res.json()
+    saveLocalCreation({
+      ...created,
+      song: created.song || KOCEE_DEMO_SONG,
+      challenge: created.challenge || KOCEE_DEMO_CHALLENGE,
+    })
+    return created
+  }
+
+  // Fallback if challenge is demo or server rejects: Save locally so creator flow is seamless
+  const localCreation: Creation = {
+    id: `local-${Date.now()}`,
+    challenge_id: data.challenge_id,
+    creator_id: '00000000-0000-0000-0000-000000000005',
+    character_id: data.character_id,
+    character: data.character_id,
+    moves_timeline: data.moves_timeline as any,
+    caption: data.caption || 'Kocee "We Di Go Na Go" dance challenge! 🇨🇲',
+    views: 1,
+    vote_count: 0,
+    engagement_rate: 0.0,
+    created_at: new Date().toISOString(),
+    creator_display_name: 'You (Creator)',
+    creator_region: 'Southwest',
+    song: KOCEE_DEMO_SONG,
+    challenge: KOCEE_DEMO_CHALLENGE,
+  }
+  saveLocalCreation(localCreation)
+  return localCreation
 }
 
 export async function loginWithPhone(
@@ -224,6 +293,7 @@ export async function submitReport(
 // Resilient Fallback Data
 function getFallbackSongs(): Song[] {
   return [
+    KOCEE_DEMO_SONG,
     {
       id: '11111111-1111-1111-1111-111111110001',
       artist_id: '00000000-0000-0000-0000-000000000002',
@@ -326,10 +396,11 @@ function getFallbackChallenges(): Challenge[] {
   const songs = getFallbackSongs()
   const twoDaysLater = new Date(Date.now() + 48 * 3600 * 1000).toISOString()
   return [
+    KOCEE_DEMO_CHALLENGE,
     {
       id: '22222222-2222-2222-2222-222222220001',
       song_id: '11111111-1111-1111-1111-111111110001',
-      song: songs[0],
+      song: songs[1] || songs[0],
       status: 'active',
       ends_at: twoDaysLater,
       creations_count: 3,
@@ -340,6 +411,86 @@ function getFallbackChallenges(): Challenge[] {
 function getFallbackCreations(): Creation[] {
   const twoDaysLater = new Date(Date.now() + 48 * 3600 * 1000).toISOString()
   return [
+    {
+      id: '33333333-koce-0000-0000-000000000001',
+      challenge_id: KOCEE_DEMO_CHALLENGE.id,
+      creator_id: '00000000-0000-0000-0000-000000000005',
+      character_id: 'tantie',
+      character: 'tantie',
+      moves_timeline: [
+        {
+          start: 42.0,
+          end: 46.0,
+          action: 'approach',
+          charA_action: 'approach',
+          charB_action: 'turn_around',
+          charA_id: 'tantie',
+          charB_id: 'mboa_boy',
+          bg: 'street_buea',
+          bgMotion: 'scroll_left',
+          prop: 'none',
+          dialogueA: 'We di go na go!',
+          dialogueB: 'On est ensemble!',
+        },
+        {
+          start: 46.0,
+          end: 50.0,
+          action: 'celebrate',
+          charA_action: 'celebrate',
+          charB_action: 'laugh',
+          charA_id: 'tantie',
+          charB_id: 'mboa_boy',
+          bg: 'street_buea',
+          bgMotion: 'static',
+          prop: 'none',
+          sfx: 'applause',
+          dialogueA: 'No stress in Buea town!',
+        },
+        {
+          start: 50.0,
+          end: 54.0,
+          action: 'shocked',
+          charA_action: 'shocked',
+          charB_action: 'angry_argue',
+          charA_id: 'tantie',
+          charB_id: 'mboa_boy',
+          bg: 'living_room',
+          bgMotion: 'zoom_in',
+          prop: 'phone',
+          sfx: 'phone_ding',
+          dialogueA: 'Who send this message?!',
+          dialogueB: 'Ah Tantie calm down!',
+        },
+        {
+          start: 54.0,
+          end: 58.0,
+          action: 'slip_fall',
+          charA_action: 'slip_fall',
+          charB_action: 'shocked',
+          charA_id: 'tantie',
+          charB_id: 'mboa_boy',
+          bg: 'chop_house',
+          bgMotion: 'static',
+          prop: 'none',
+          sfx: 'comedy_slip',
+          dialogueA: 'Chai! Dis floor slippery!',
+          dialogueB: 'Ashia Tantie!',
+        },
+      ],
+      caption: 'Kocee "We Di Go Na Go" official animation! We cropped the chorus (0:42 — 0:58) 🇨🇲🔥',
+      views: 520,
+      vote_count: 8,
+      engagement_rate: 0.045,
+      creator: {
+        id: '00000000-0000-0000-0000-000000000005',
+        display_name: 'Buea Animator',
+        region: 'Southwest',
+      },
+      creator_display_name: 'Buea Animator',
+      creator_region: 'Southwest',
+      challenge: KOCEE_DEMO_CHALLENGE,
+      song: KOCEE_DEMO_SONG,
+    },
     {
       id: '33333333-3333-3333-3333-333333330001',
       challenge_id: '22222222-2222-2222-2222-222222220001',

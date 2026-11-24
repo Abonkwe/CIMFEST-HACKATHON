@@ -138,19 +138,23 @@ export const FeedScreen: React.FC = () => {
     }
 
     setActiveCreationId(creation.id)
-    const clipUrl = creation.song?.clip_url || '/assets/audio/song1.mp3'
-    playSong({
-      id: creation.song?.id || creation.id,
-      artist_id: creation.creator_id,
-      title: creation.song?.title || 'Makossa Beat',
-      genre: creation.song?.genre || 'Makossa',
-      language: 'Cameroon',
-      clip_url: clipUrl,
-      duration_sec: 24,
-      bpm: creation.song?.bpm || 115,
-      status: 'trending',
-      trending_score: 95,
-    })
+    const clipUrl = creation.song?.clip_url || '/assets/audio/kocee_we_di_go_na_go.mp3'
+    const clipStart = creation.moves_timeline?.[0]?.start ?? 0
+    playSong(
+      {
+        id: creation.song?.id || creation.id,
+        artist_id: creation.creator_id,
+        title: creation.song?.title || 'We Di Go Na Go',
+        genre: creation.song?.genre || 'Afropop',
+        language: 'Cameroon',
+        clip_url: clipUrl,
+        duration_sec: (creation.song as any)?.duration_sec || 156,
+        bpm: creation.song?.bpm || 118,
+        status: 'trending',
+        trending_score: 95,
+      },
+      clipStart
+    )
 
     try {
       const res = await recordCreationView(creation.id)
@@ -271,7 +275,9 @@ export const FeedScreen: React.FC = () => {
                     <div className="relative w-full rounded-2xl overflow-hidden border border-[#536D56]/50 shadow-inner">
                       <StagePlayer
                         characterId={item.character_id || item.character || 'tantie'}
-                        backgroundTheme={bgTheme}
+                        characterAId={item.moves_timeline?.[0]?.charA_id || item.character_id || item.character || 'tantie'}
+                        characterBId={item.moves_timeline?.[0]?.charB_id}
+                        backgroundTheme={item.moves_timeline?.[0]?.bg || bgTheme}
                         movesTimeline={item.moves_timeline || []}
                         bpm={creationBpm}
                         currentTime={isThisItemPlaying ? currentTime : 0}

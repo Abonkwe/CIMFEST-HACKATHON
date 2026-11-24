@@ -1,21 +1,32 @@
 /**
- * Audio Utilities & Web Audio API Demo Safety Net (NFR-2, NFR-8)
+ * Audio Utilities & Web Audio Story SFX Engine (NFR-2, NFR-8)
  *
  * Provides:
  * 1. resolveClipUrl: maps backend placeholder URLs to local offline assets (/assets/audio/song1.mp3, song2.mp3)
- * 2. AfrobeatsSynthEngine: lightweight procedural drum & bass synthesizer using pure Web Audio API
- *    guaranteeing playable rhythmic audio even if external MP3 files fail to load during live hackathon demos.
+ * 2. StorySFXEngine: crisp, high-fidelity Web Audio API sound effects for short storytelling cues
+ *    (phone_ding, gasp, comedy_slip, applause) layered cleanly over real MP3 song playback.
  */
 
+import type { StorySFX } from '../types'
+
 export function resolveClipUrl(url?: string, songIdOrTitle?: string): string {
-  if (!url) return '/assets/audio/song1.mp3'
+  const str = `${url || ''} ${songIdOrTitle || ''}`.toLowerCase()
+
+  // Prioritize Kocee — We Di Go Na Go demo audio
+  if (
+    str.includes('kocee') ||
+    str.includes('go na go') ||
+    str.includes('we di go')
+  ) {
+    return '/assets/audio/kocee_we_di_go_na_go.mp3'
+  }
+
+  if (!url) return '/assets/audio/kocee_we_di_go_na_go.mp3'
 
   // If already pointing to a local public asset
   if (url.startsWith('/assets/audio/')) {
     return url
   }
-
-  const str = `${url} ${songIdOrTitle || ''}`.toLowerCase()
 
   // Map placeholders, non-existent domains, or external Pixabay URLs to local demo songs
   if (
@@ -39,203 +50,172 @@ export function resolveClipUrl(url?: string, songIdOrTitle?: string): string {
 }
 
 /**
- * Procedural Web Audio API Afrobeats / Makossa Synthesizer
- * Zero external audio files required. Uses native browser AudioContext oscillators and noise buffers.
+ * Storytelling Sound Effects (SFX) Engine using Web Audio API
+ * Generates instant, clean, zero-latency acoustic cues for comic animations.
  */
-export class AfrobeatsSynthEngine {
+class StorySFXEngine {
   private ctx: AudioContext | null = null
-  private isRunning: boolean = false
-  private timerId: ReturnType<typeof setTimeout> | null = null
-  private nextNoteTime: number = 0
-  private step: number = 0
-  private bpm: number = 115
 
-  start(bpm: number = 115) {
-    this.bpm = bpm || 115
-    if (!this.ctx) {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+  private getContext(): AudioContext | null {
+    if (!this.ctx && typeof window !== 'undefined') {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
       if (AudioCtx) {
         this.ctx = new AudioCtx()
       }
     }
-    if (!this.ctx) return
-
-    if (this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume()
     }
-
-    if (this.isRunning) return
-    this.isRunning = true
-    this.step = 0
-    this.nextNoteTime = this.ctx.currentTime + 0.05
-    this.scheduler()
+    return this.ctx
   }
 
-  stop() {
-    this.isRunning = false
-    if (this.timerId) {
-      clearTimeout(this.timerId)
-      this.timerId = null
-    }
-  }
+  play(sfx?: StorySFX) {
+    if (!sfx || sfx === 'none') return
+    const ctx = this.getContext()
+    if (!ctx) return
 
-  private scheduler = () => {
-    if (!this.isRunning || !this.ctx) return
+    const now = ctx.currentTime
 
-    // Schedule up to 100ms in advance
-    while (this.nextNoteTime < this.ctx.currentTime + 0.1) {
-      this.playStep(this.step, this.nextNoteTime)
-      // Step duration is a 16th note = 60 / (bpm * 4)
-      const secondsPerBeat = 60.0 / Math.max(this.bpm, 60)
-      const stepDuration = secondsPerBeat / 4
-      this.nextNoteTime += stepDuration
-      this.step = (this.step + 1) % 16
-    }
-    this.timerId = setTimeout(this.scheduler, 25)
-  }
-
-  private playStep(step: number, time: number) {
-    if (!this.ctx) return
-
-    // Makossa / Afrobeats 16-step rhythmic pattern:
-    // Kick: Beat 1 (0), Beat 2.5 syncopation (6), Beat 3.5 syncopation (10)
-    const isKick = step === 0 || step === 6 || step === 10
-
-    // Snare / Rimshot: Beat 2 (4), Beat 4 (12), light ghost note (14)
-    const isSnare = step === 4 || step === 12
-    const isGhostSnare = step === 14
-
-    // Shaker / Hi-Hat: Every 8th/16th off-beat
-    const isShaker = step % 2 === 1
-
-    // Bassline: Syncopated Makossa root/fourth/fifth groove
-    const isBass = step === 0 || step === 4 || step === 8 || step === 10
-
-    if (isKick) {
-      this.playKick(time)
-    }
-    if (isSnare) {
-      this.playSnare(time, 0.28)
-    } else if (isGhostSnare) {
-      this.playSnare(time, 0.1)
-    }
-    if (isShaker) {
-      this.playShaker(time)
-    }
-    if (isBass) {
-      // Makossa Bass Frequencies (C2 ~65Hz, F2 ~87Hz, G2 ~98Hz, Eb2 ~77Hz)
-      const pitches = [65.4, 87.3, 98.0, 77.8]
-      const freq = pitches[Math.floor(step / 4) % pitches.length]
-      this.playBass(time, freq)
+    switch (sfx) {
+      case 'phone_ding':
+        this.playPhoneDing(ctx, now)
+        break
+      case 'gasp':
+        this.playGasp(ctx, now)
+        break
+      case 'comedy_slip':
+        this.playComedySlip(ctx, now)
+        break
+      case 'applause':
+        this.playApplause(ctx, now)
+        break
     }
   }
 
-  private playKick(time: number) {
-    if (!this.ctx) return
-    const osc = this.ctx.createOscillator()
-    const gain = this.ctx.createGain()
-    osc.type = 'sine'
+  private playPhoneDing(ctx: AudioContext, time: number) {
+    // Dual bell crystal chime (E6 ~1318.5Hz + B6 ~1975.5Hz)
+    const pitches = [1318.5, 1975.5]
+    pitches.forEach((freq, idx) => {
+      const t = time + idx * 0.08
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, t)
 
-    // Pitch sweep for deep punchy Cameroon kick
-    osc.frequency.setValueAtTime(140, time)
-    osc.frequency.exponentialRampToValueAtTime(36, time + 0.16)
+      gain.gain.setValueAtTime(0, time)
+      gain.gain.setValueAtTime(0.25, t)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.55)
 
-    gain.gain.setValueAtTime(0.35, time)
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
 
-    osc.connect(gain)
-    gain.connect(this.ctx.destination)
-
-    osc.start(time)
-    osc.stop(time + 0.22)
+      osc.start(t)
+      osc.stop(t + 0.6)
+    })
   }
 
-  private playSnare(time: number, volume: number) {
-    if (!this.ctx) return
-
-    // Tonal body
-    const osc = this.ctx.createOscillator()
-    const toneGain = this.ctx.createGain()
-    osc.type = 'triangle'
-    osc.frequency.setValueAtTime(190, time)
-    osc.frequency.exponentialRampToValueAtTime(80, time + 0.1)
-
-    toneGain.gain.setValueAtTime(volume * 0.45, time)
-    toneGain.gain.exponentialRampToValueAtTime(0.001, time + 0.11)
-
-    osc.connect(toneGain)
-    toneGain.connect(this.ctx.destination)
-    osc.start(time)
-    osc.stop(time + 0.12)
-
-    // Noise crack
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.1)
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
+  private playGasp(ctx: AudioContext, time: number) {
+    // Quick breathy noise inhalation swell
+    const dur = 0.35
+    const bufferSize = Math.floor(ctx.sampleRate * dur)
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
     const data = buffer.getChannelData(0)
     for (let i = 0; i < bufferSize; i++) {
-      data[i] = Math.random() * 2 - 1
+      data[i] = (Math.random() * 2 - 1) * Math.sin((i / bufferSize) * Math.PI)
     }
-    const noise = this.ctx.createBufferSource()
+
+    const noise = ctx.createBufferSource()
     noise.buffer = buffer
 
-    const filter = this.ctx.createBiquadFilter()
-    filter.type = 'highpass'
-    filter.frequency.setValueAtTime(1100, time)
-
-    const noiseGain = this.ctx.createGain()
-    noiseGain.gain.setValueAtTime(volume * 0.55, time)
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.12)
-
-    noise.connect(filter)
-    filter.connect(noiseGain)
-    noiseGain.connect(this.ctx.destination)
-
-    noise.start(time)
-    noise.stop(time + 0.13)
-  }
-
-  private playShaker(time: number) {
-    if (!this.ctx) return
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.04)
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
-    const data = buffer.getChannelData(0)
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize)
-    }
-    const noise = this.ctx.createBufferSource()
-    noise.buffer = buffer
-
-    const filter = this.ctx.createBiquadFilter()
+    const filter = ctx.createBiquadFilter()
     filter.type = 'bandpass'
-    filter.frequency.setValueAtTime(7500, time)
+    filter.frequency.setValueAtTime(700, time)
+    filter.frequency.exponentialRampToValueAtTime(1700, time + dur * 0.8)
+    filter.Q.setValueAtTime(3.5, time)
 
-    const gain = this.ctx.createGain()
-    gain.gain.setValueAtTime(0.12, time)
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04)
+    const gain = ctx.createGain()
+    gain.gain.setValueAtTime(0.02, time)
+    gain.gain.linearRampToValueAtTime(0.28, time + dur * 0.5)
+    gain.gain.exponentialRampToValueAtTime(0.001, time + dur)
 
     noise.connect(filter)
     filter.connect(gain)
-    gain.connect(this.ctx.destination)
+    gain.connect(ctx.destination)
 
     noise.start(time)
-    noise.stop(time + 0.05)
+    noise.stop(time + dur + 0.02)
   }
 
-  private playBass(time: number, freq: number) {
-    if (!this.ctx) return
-    const osc = this.ctx.createOscillator()
-    const gain = this.ctx.createGain()
-    osc.type = 'triangle'
-    osc.frequency.setValueAtTime(freq, time)
+  private playComedySlip(ctx: AudioContext, time: number) {
+    // Cartoon slide-whistle downward swoop + floor bounce
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
 
-    gain.gain.setValueAtTime(0.24, time)
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.25)
+    // Swoop down from 880Hz to 130Hz
+    osc.frequency.setValueAtTime(880, time)
+    osc.frequency.exponentialRampToValueAtTime(130, time + 0.42)
+
+    gain.gain.setValueAtTime(0.3, time)
+    gain.gain.linearRampToValueAtTime(0.35, time + 0.1)
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.45)
 
     osc.connect(gain)
-    gain.connect(this.ctx.destination)
+    gain.connect(ctx.destination)
 
     osc.start(time)
-    osc.stop(time + 0.28)
+    osc.stop(time + 0.48)
+
+    // Comedic floor thud
+    const thud = ctx.createOscillator()
+    const thudGain = ctx.createGain()
+    thud.type = 'triangle'
+    thud.frequency.setValueAtTime(85, time + 0.4)
+    thud.frequency.exponentialRampToValueAtTime(32, time + 0.58)
+
+    thudGain.gain.setValueAtTime(0.35, time + 0.4)
+    thudGain.gain.exponentialRampToValueAtTime(0.001, time + 0.6)
+
+    thud.connect(thudGain)
+    thudGain.connect(ctx.destination)
+
+    thud.start(time + 0.4)
+    thud.stop(time + 0.62)
+  }
+
+  private playApplause(ctx: AudioContext, time: number) {
+    // Multi-burst cheering and clapping simulation
+    const clapCount = 16
+    for (let c = 0; c < clapCount; c++) {
+      const clapTime = time + Math.random() * 0.85
+      const clapDur = 0.045 + Math.random() * 0.03
+      const bufferSize = Math.floor(ctx.sampleRate * clapDur)
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate)
+      const data = buffer.getChannelData(0)
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize)
+      }
+      const noise = ctx.createBufferSource()
+      noise.buffer = buffer
+
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'bandpass'
+      filter.frequency.setValueAtTime(1200 + Math.random() * 1400, clapTime)
+
+      const gain = ctx.createGain()
+      gain.gain.setValueAtTime(0.16 + Math.random() * 0.12, clapTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, clapTime + clapDur)
+
+      noise.connect(filter)
+      filter.connect(gain)
+      gain.connect(ctx.destination)
+
+      noise.start(clapTime)
+      noise.stop(clapTime + clapDur + 0.01)
+    }
   }
 }
 
+export const storySFX = new StorySFXEngine()

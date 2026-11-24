@@ -1,30 +1,48 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import type { Challenge, MoveBlock } from '../types'
+import type { Challenge, MoveBlock, StoryProp, StorySFX } from '../types'
 import { fetchActiveChallenges, fetchTrendingSongs, submitCreation } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
-import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
+import { StagePlayer } from '../components/StagePlayer'
+import {
+  STORY_TEMPLATES,
+  STORY_ACTIONS,
+  STORY_BACKGROUNDS,
+  BG_MOTIONS,
+  STORY_PROPS,
+  STORY_SFX_LIST,
+  KOCEE_DEMO_SONG,
+  KOCEE_DEMO_CHALLENGE,
+  type StoryTemplate,
+} from '../lib/storyTemplates'
 
 interface StudioPageProps {
   onNavigateTab: (tab: string) => void
 }
 
-const CHARACTERS = [
+const CHARACTERS: {
+  id: 'tantie' | 'mboa_boy' | 'pa_buea'
+  displayName: string
+  subtitle: string
+  avatar: string
+  badge: string
+  description: string
+}[] = [
   {
     id: 'tantie',
     displayName: 'Tantie',
     subtitle: 'Makossa Mama',
     avatar: '💃',
     badge: 'Classic Queen',
-    description: 'Traditional wax-print boubou & bold energy',
+    description: 'Traditional wax-print boubou & sunglasses',
   },
   {
     id: 'mboa_boy',
     displayName: 'Mboa Boy',
     subtitle: 'Urban 237 Dancer',
     avatar: '🕺',
-    badge: 'Afropop King',
-    description: 'Streetwear hoodie, retro shades & snapback cap',
+    badge: 'Street King',
+    description: 'Streetwear hoodie & urban beanie',
   },
   {
     id: 'pa_buea',
@@ -32,91 +50,8 @@ const CHARACTERS = [
     subtitle: 'Makossa Legend',
     avatar: '🎩',
     badge: 'Master Elder',
-    description: 'Buea royal tunic, wireframe specs & gold cane',
+    description: 'Buea royal tunic, glasses & distinguished beard',
   },
-]
-
-const BACKGROUND_SWATCHES: {
-  id: BackgroundTheme
-  name: string
-  colors: string
-  ringColor: string
-}[] = [
-  {
-    id: 'sage_starburst',
-    name: 'Sage Starburst',
-    colors: 'from-[#536D56] to-[#F43F5E]',
-    ringColor: '#F43F5E',
-  },
-  {
-    id: 'amber_sunset',
-    name: 'Amber Sunset',
-    colors: 'from-[#D97706] to-[#451A03]',
-    ringColor: '#F59E0B',
-  },
-  {
-    id: 'slate_night',
-    name: 'Slate Night',
-    colors: 'from-[#0F172A] to-[#06B6D4]',
-    ringColor: '#06B6D4',
-  },
-  {
-    id: 'lavender_haze',
-    name: 'Lavender Haze',
-    colors: 'from-[#8B5CF6] to-[#DB2777]',
-    ringColor: '#C084FC',
-  },
-]
-
-const MOVE_PADS: {
-  action: string
-  label: string
-  icon: string
-  desc: string
-  color: string
-}[] = [
-  {
-    action: 'sway',
-    label: 'Sway',
-    icon: '🕺',
-    desc: 'Hip & body rhythm tilt',
-    color: 'from-emerald-600 to-teal-800 border-emerald-500/50',
-  },
-  {
-    action: 'stomp',
-    label: 'Stomp',
-    icon: '👞',
-    desc: 'Ground-shaking beat impact',
-    color: 'from-amber-600 to-orange-800 border-amber-500/50',
-  },
-  {
-    action: 'jump',
-    label: 'Jump',
-    icon: '🦘',
-    desc: 'High bounce airborne leap',
-    color: 'from-rose-600 to-red-800 border-rose-500/50',
-  },
-  {
-    action: 'flex',
-    label: 'Flex',
-    icon: '💪',
-    desc: 'Swagger muscle & chest pop',
-    color: 'from-indigo-600 to-violet-800 border-indigo-500/50',
-  },
-]
-
-const QUICK_STICKERS = [
-  { label: 'Dis Beat Sweet!', icon: '🎵', tag: 'Pidgin' },
-  { label: 'Chai!', icon: '💥', tag: 'Cameroon' },
-  { label: 'No Stress!', icon: '✨', tag: 'Street' },
-]
-
-const CAMEROON_PHRASES = [
-  'Dis Beat Sweet! 🔥',
-  'Chai! Mboa boy di dance! 🕺',
-  'No Stress, we vibe! ✨',
-  'On va danser le Makossa! 🇨🇲',
-  'Waka fine, level don change! 🚀',
 ]
 
 // Circular Character Avatar rendering Open Peeps SVG with fallback
@@ -143,39 +78,81 @@ const CharacterAvatarCircle: React.FC<{
   )
 }
 
+// Visual waveform amplitude profile (transients for 48 bars)
+const WAVEFORM_BARS = [
+  30, 45, 60, 35, 75, 90, 65, 40, 85, 100, 70, 50, 40, 65, 80, 95,
+  85, 60, 45, 75, 90, 100, 80, 55, 40, 70, 85, 65, 90, 95, 75, 50,
+  35, 60, 80, 100, 90, 70, 55, 85, 90, 65, 45, 60, 80, 70, 50, 35,
+]
+
+// Distribute cropped song slice equally across story scenes
+function distributeCroppedWindowToScenes(
+  start: number,
+  end: number,
+  scenes: MoveBlock[]
+): MoveBlock[] {
+  const count = scenes.length || 4
+  const duration = Math.max(end - start, 8)
+  const sceneLength = duration / count
+  return scenes.map((scene, idx) => ({
+    ...scene,
+    start: Number((start + idx * sceneLength).toFixed(2)),
+    end: Number((start + (idx + 1) * sceneLength).toFixed(2)),
+  }))
+}
+
+function formatTime(seconds: number): string {
+  const safe = Math.max(0, isNaN(seconds) ? 0 : seconds)
+  const mins = Math.floor(safe / 60)
+  const secs = Math.floor(safe % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
 export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   const { user, token, openLoginModal } = useAuth()
-  const { playSong, pauseSong, seek, currentTime, isPlaying, currentSong, audioElement } = useAudio()
+  const {
+    playSong,
+    loadSong,
+    pauseSong,
+    seek,
+    currentTime,
+    duration: audioDuration,
+    isPlaying,
+    currentSong,
+    audioElement,
+    playSFX,
+  } = useAudio()
 
-  // Challenges and songs
-  const [challenges, setChallenges] = useState<Challenge[]>([])
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null)
+  // Challenges and songs - Kocee is default challenge (FR-20, Demo Track Default)
+  const [challenges, setChallenges] = useState<Challenge[]>([KOCEE_DEMO_CHALLENGE])
+  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(KOCEE_DEMO_CHALLENGE)
   const [loading, setLoading] = useState(true)
 
-  // Character selection (FR-20)
-  const [selectedCharacter, setSelectedCharacter] = useState<string>('mboa_boy')
+  // Full track duration derived from audio element or metadata
+  const fullSongDuration = Math.max(
+    audioDuration || 0,
+    selectedChallenge?.song?.duration_sec || 156
+  )
 
-  // Background theme (Pure CSS + SVG, NFR-2)
-  const [backgroundTheme, setBackgroundTheme] = useState<BackgroundTheme>('sage_starburst')
+  // In-Studio Song Section Cropper state (allows any 8s to 30s section of song)
+  // Default to the famous chorus of Kocee "We Di Go Na Go" (0:42 — 0:58 • 16s selected)
+  const [clipStart, setClipStart] = useState<number>(42)
+  const [clipEnd, setClipEnd] = useState<number>(58)
 
-  // 8-Block Timeline (FR-21)
-  const [activeBlockIndex, setActiveBlockIndex] = useState<number>(0)
-  const totalDuration = selectedChallenge?.song?.duration_sec || currentSong?.duration_sec || 24
+  // 2-Character Selection
+  const [characterA, setCharacterA] = useState<'tantie' | 'mboa_boy' | 'pa_buea'>('tantie')
+  const [characterB, setCharacterB] = useState<'tantie' | 'mboa_boy' | 'pa_buea' | 'none'>('mboa_boy')
 
-  // Initialize 8 equal blocks
+  // Active Scene in the Scene Timeline
+  const [activeSceneIndex, setActiveSceneIndex] = useState<number>(0)
+
+  // Initialize Timeline with the first Story Template ("The Unexpected Message") mapped to 0:42 - 0:58
   const [timelineBlocks, setTimelineBlocks] = useState<MoveBlock[]>(() => {
-    const blockDuration = 24 / 8
-    const defaultMoves = ['sway', 'stomp', 'jump', 'flex', 'sway', 'stomp', 'jump', 'flex']
-    return Array.from({ length: 8 }).map((_, i) => ({
-      start: Math.round(i * blockDuration * 10) / 10,
-      end: Math.round((i + 1) * blockDuration * 10) / 10,
-      action: defaultMoves[i],
-    }))
+    return distributeCroppedWindowToScenes(42, 58, STORY_TEMPLATES[0].scenes)
   })
 
-  // Caption & Stickers (FR-23)
-  const [caption, setCaption] = useState<string>('Dis Beat Sweet!')
-  const [activeSticker, setActiveSticker] = useState<string | null>('Dis Beat Sweet!')
+  // Selected story template badge indicator
+  const [activeTemplateId, setActiveTemplateId] = useState<string>('unexpected_message')
 
   // Submission state
   const [submitting, setSubmitting] = useState(false)
@@ -185,47 +162,30 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   // Scrubber container ref for smooth seeking
   const scrubberRef = useRef<HTMLInputElement>(null)
 
-  // Load active challenges & songs (without forcing auto-play on mount to respect browser autoplay policies)
+  // Load active challenges & songs, guaranteeing Kocee is at index 0 and selected
   useEffect(() => {
     let mounted = true
     const initStudio = async () => {
       setLoading(true)
       try {
-        const [chData, trendingData] = await Promise.all([
+        const [chData] = await Promise.all([
           fetchActiveChallenges(),
           fetchTrendingSongs(),
         ])
         if (!mounted) return
-        setChallenges(chData)
 
-        let initialCh: Challenge | null = null
-        if (chData.length > 0) {
-          initialCh = chData[0]
-        } else if (trendingData.length > 0) {
-          initialCh = {
-            id: '11111111-2222-3333-4444-555555555555',
-            song_id: trendingData[0].id,
-            song: trendingData[0],
-            status: 'active',
-            ends_at: new Date(Date.now() + 86400000).toISOString(),
-            creations_count: 12,
-          }
-        }
-
-        if (initialCh) {
-          setSelectedChallenge(initialCh)
-          if (initialCh.song) {
-            const dur = initialCh.song.duration_sec || 24
-            const blockDuration = dur / 8
-            setTimelineBlocks((prev) =>
-              prev.map((block, i) => ({
-                start: Math.round(i * blockDuration * 10) / 10,
-                end: Math.round((i + 1) * blockDuration * 10) / 10,
-                action: block.action || 'sway',
-              }))
-            )
-          }
-        }
+        // Prepend Kocee demo challenge so it's always available and selected by default
+        const mergedChallenges: Challenge[] = [
+          KOCEE_DEMO_CHALLENGE,
+          ...chData.filter(
+            (c) =>
+              c.id !== KOCEE_DEMO_CHALLENGE.id &&
+              c.song?.title !== KOCEE_DEMO_SONG.title
+          ),
+        ]
+        setChallenges(mergedChallenges)
+        setSelectedChallenge(KOCEE_DEMO_CHALLENGE)
+        loadSong(KOCEE_DEMO_SONG, 42)
       } catch (err) {
         console.warn('Failed loading studio challenges:', err)
       } finally {
@@ -236,10 +196,10 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [loadSong])
 
   // Current playing song & BPM
-  const activeBpm = selectedChallenge?.song?.bpm || currentSong?.bpm || 110
+  const activeBpm = selectedChallenge?.song?.bpm || currentSong?.bpm || 115
 
   // Highlighted block in real time from <audio>.currentTime
   const currentHighlightedBlockIndex = useMemo(() => {
@@ -249,37 +209,63 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     return foundIdx !== -1 ? foundIdx : 0
   }, [timelineBlocks, currentTime])
 
-  // Assign move to the active selected block and advance
-  const handleAssignMove = (action: string) => {
+  // Active scene being edited
+  const activeScene = timelineBlocks[activeSceneIndex] || timelineBlocks[0]
+
+  // Update current scene field
+  const updateActiveScene = (updates: Partial<MoveBlock>) => {
     setTimelineBlocks((prev) =>
-      prev.map((b, idx) => (idx === activeBlockIndex ? { ...b, action } : b))
+      prev.map((block, idx) => (idx === activeSceneIndex ? { ...block, ...updates } : block))
     )
-    // Auto-advance to next block for super fast composition (NFR-3: under 2 min)
-    setActiveBlockIndex((prev) => (prev + 1) % 8)
   }
 
-  // Quick preset sequences
-  const handleApplyPreset = (presetType: 'makossa' | 'high_energy' | 'swagger') => {
-    let actions: string[] = []
-    if (presetType === 'makossa') {
-      actions = ['sway', 'sway', 'stomp', 'stomp', 'sway', 'sway', 'flex', 'flex']
-    } else if (presetType === 'high_energy') {
-      actions = ['jump', 'stomp', 'jump', 'stomp', 'jump', 'jump', 'flex', 'flex']
-    } else {
-      actions = ['sway', 'stomp', 'jump', 'flex', 'sway', 'stomp', 'jump', 'flex']
+  // 1-Click Apply Story Template (automatically distributed over current cropped slice)
+  const handleApplyTemplate = (template: StoryTemplate) => {
+    setActiveTemplateId(template.id)
+    setCharacterA(template.characterAId)
+    setCharacterB(template.characterBId || 'none')
+    setTimelineBlocks(distributeCroppedWindowToScenes(clipStart, clipEnd, template.scenes))
+    setActiveSceneIndex(0)
+    seek(clipStart)
+  }
+
+  // Adjust song crop range (enforces 8s to 30s window, auto-divides across story scenes)
+  const handleCropChange = (newStart: number, newEnd: number) => {
+    let clampedStart = Math.max(0, Math.min(newStart, fullSongDuration - 8))
+    let clampedEnd = Math.max(clampedStart + 8, Math.min(newEnd, fullSongDuration))
+
+    // Enforce max 30s section limit
+    if (clampedEnd - clampedStart > 30) {
+      if (newStart !== clipStart) {
+        clampedEnd = clampedStart + 30
+      } else {
+        clampedStart = clampedEnd - 30
+      }
     }
 
-    setTimelineBlocks((prev) =>
-      prev.map((b, i) => ({ ...b, action: actions[i] || 'sway' }))
-    )
+    setClipStart(clampedStart)
+    setClipEnd(clampedEnd)
+
+    // Automatically divide cropped window equally across story scenes
+    setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clampedStart, clampedEnd, prev))
+
+    if (currentTime < clampedStart || currentTime >= clampedEnd) {
+      seek(clampedStart)
+    }
   }
 
-  // Handle clicking a timeline block
-  const handleSelectBlock = (idx: number) => {
-    setActiveBlockIndex(idx)
-    const targetBlock = timelineBlocks[idx]
-    if (targetBlock) {
-      seek(targetBlock.start)
+  // Preview only from clipStart to clipEnd
+  const handlePreviewCut = () => {
+    const targetSong = selectedChallenge?.song || currentSong || KOCEE_DEMO_SONG
+    playSong(targetSong, clipStart)
+  }
+
+  // Select Scene from bottom Scene Timeline
+  const handleSelectScene = (idx: number) => {
+    setActiveSceneIndex(idx)
+    const targetScene = timelineBlocks[idx]
+    if (targetScene) {
+      seek(targetScene.start)
     }
   }
 
@@ -288,8 +274,11 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     if (isPlaying) {
       pauseSong()
     } else {
-      if (selectedChallenge?.song) {
-        playSong(selectedChallenge.song)
+      const songToPlay = selectedChallenge?.song || currentSong || KOCEE_DEMO_SONG
+      if (currentTime < clipStart || currentTime >= clipEnd) {
+        playSong(songToPlay, clipStart)
+      } else {
+        playSong(songToPlay, currentTime)
       }
     }
   }
@@ -313,72 +302,124 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
       return
     }
 
+    // Attach charA_id and charB_id to all scene blocks so playback mode is 100% rich
+    const richMovesTimeline = timelineBlocks.map((b) => ({
+      ...b,
+      charA_id: characterA,
+      charB_id: characterB !== 'none' ? characterB : undefined,
+      action: b.charA_action || b.action || 'approach',
+    }))
+
+    const firstCaption =
+      timelineBlocks[0]?.dialogueA ||
+      timelineBlocks[0]?.dialogueB ||
+      'Dis Beat Sweet! 🔥'
+
     setSubmitting(true)
     try {
-      const payload = {
-        challenge_id: selectedChallenge.id,
-        character_id: selectedCharacter,
-        moves_timeline: timelineBlocks.map((b) => ({
-          start: b.start,
-          end: b.end,
-          action: b.action,
-        })),
-        caption: caption.trim() || undefined,
-      }
+      await submitCreation(
+        {
+          challenge_id: selectedChallenge.id,
+          character_id: characterA,
+          moves_timeline: richMovesTimeline,
+          caption: firstCaption,
+        },
+        token
+      )
 
-      await submitCreation(payload, token)
       setSubmitSuccess(true)
-
-      // Short delay for celebration, then redirect to /feed
       setTimeout(() => {
         onNavigateTab('feed')
-      }, 900)
+      }, 1000)
     } catch (err: any) {
-      console.error('Failed submitting creation:', err)
-      setSubmitError(err?.message || 'Failed to submit creation to challenge.')
+      console.error('Submission failed:', err)
+      setSubmitError(err?.message || 'Failed to submit creation. Please try again.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  if (loading) {
-    return (
-      <div className="py-24 text-center space-y-3 animate-fade-in">
-        <span className="inline-block w-8 h-8 border-3 border-[#536D56] border-t-transparent rounded-full animate-spin" />
-        <h3 className="text-base font-bold text-white">Loading Animation Studio Lite...</h3>
-        <p className="text-xs text-neutral-400">Loading Cameroon challenges and 2-pose character engines...</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6 pb-28 md:pb-16 animate-fade-in">
-      {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#FACC15] uppercase tracking-wider">
-            <span>✨ Animation Studio Lite</span>
-            <span>·</span>
-            <span>FR-20 – FR-24</span>
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* ========================================================= */}
+      {/* 1. TOP HEADER & 1-CLICK STORY TEMPLATES BAR */}
+      {/* ========================================================= */}
+      <div className="space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#536D56]/20 border border-[#536D56]/40 text-[#8FA993] text-xs font-semibold uppercase tracking-wider mb-2">
+              <span>🎭 Animation Studio Pro</span>
+              <span>·</span>
+              <span>Interactive Storytelling</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+              Create Your Animated Story
+            </h1>
+            <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+              Direct 2-character Cameroonian stories, comic dialogue, moving backgrounds, and real sound effects.
+            </p>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            Create Your BeatToon
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
-            Sequence snappy dance moves to Cameroon beats with 0 video rendering.
-          </p>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-mono px-3 py-1.5 rounded-full bg-neutral-900 border border-[#536D56]/40 text-[#8FA993] flex items-center gap-1.5 shadow">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>60fps GPU Engine</span>
+            </span>
+          </div>
         </div>
 
-        {/* Quick Help / Info Pill */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-xs font-mono px-3 py-1.5 rounded-full bg-neutral-900 border border-[#536D56]/40 text-[#8FA993] flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>NFR-2 Low Data (JSON Engine)</span>
-          </span>
+        {/* 3 PREDEFINED 1-CLICK STORY TEMPLATES */}
+        <div className="p-4 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+              <span>1-Click Story Templates</span>
+              <span className="text-[#FACC15]">⚡</span>
+            </label>
+            <span className="text-[10px] text-neutral-400">
+              Instant 4-scene presets
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {STORY_TEMPLATES.map((tmpl) => {
+              const isSelected = activeTemplateId === tmpl.id
+              return (
+                <button
+                  key={tmpl.id}
+                  type="button"
+                  onClick={() => handleApplyTemplate(tmpl)}
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-[#536D56]/30 border-[#F43F5E] shadow-[0_0_15px_rgba(244,63,94,0.3)] scale-[1.01]'
+                      : 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
+                  }`}
+                >
+                  <span className="text-2xl p-2 rounded-xl bg-neutral-800 shrink-0">
+                    {tmpl.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-white truncate">
+                        {tmpl.title}
+                      </span>
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-[#FACC15]/20 text-[#FACC15] shrink-0">
+                        {tmpl.genre}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-neutral-400 mt-0.5 line-clamp-1">
+                      {tmpl.subtitle}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Main Studio Grid: Responsive Side-by-Side (Desktop) / 50/50 Split (Mobile) */}
+      {/* ========================================================= */}
+      {/* 2. MAIN STUDIO GRID (Stage Preview & Controls) */}
+      {/* ========================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ========================================================= */}
         {/* LEFT COLUMN: LIVE STAGE PREVIEW & TRANSPORT (lg:col-span-6) */}
@@ -387,15 +428,13 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
           {/* Reusable StagePlayer Live Component */}
           <div className="relative rounded-3xl overflow-hidden border border-[#536D56]/60 shadow-2xl bg-black">
             <StagePlayer
-              characterId={selectedCharacter}
-              backgroundTheme={backgroundTheme}
+              characterId={characterA}
+              characterAId={characterA}
+              characterBId={characterB !== 'none' ? characterB : null}
               movesTimeline={timelineBlocks}
               bpm={activeBpm}
               currentTime={currentTime}
               isPlaying={isPlaying}
-              caption={caption}
-              sticker={activeSticker}
-              onStickerTap={(st) => setActiveSticker(st)}
               aspectRatio="aspect-[16/11] sm:aspect-[16/10]"
               mode="studio"
               audioElement={audioElement}
@@ -403,9 +442,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             />
           </div>
 
-          {/* Audio Transport Scrubber Bar (FR-22) */}
+          {/* Audio Transport Scrubber Bar */}
           <div className="p-4 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            {/* Top row: Track info & BPM */}
             <div className="flex items-center justify-between text-xs">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="text-base">🎵</span>
@@ -421,36 +459,35 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
               </span>
             </div>
 
-            {/* Scrubber Range Slider */}
+            {/* Scrubber Range Slider (Cropped Section Scrubber) */}
             <div className="space-y-1">
               <input
                 ref={scrubberRef}
                 type="range"
-                min={0}
-                max={totalDuration}
+                min={clipStart}
+                max={clipEnd}
                 step={0.1}
-                value={currentTime}
+                value={Math.max(clipStart, Math.min(clipEnd, currentTime))}
                 onChange={(e) => handleScrub(parseFloat(e.target.value))}
                 className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#F43F5E] focus:outline-none"
               />
               <div className="flex items-center justify-between text-[11px] font-mono text-neutral-400">
-                <span>{currentTime.toFixed(1)}s</span>
-                <span className="text-[#8FA993]">
-                  Block #{currentHighlightedBlockIndex + 1} ({timelineBlocks[currentHighlightedBlockIndex]?.action?.toUpperCase()})
+                <span>{formatTime(currentTime)} ({(Math.max(0, currentTime - clipStart)).toFixed(1)}s)</span>
+                <span className="text-[#8FA993] font-bold">
+                  Scene #{currentHighlightedBlockIndex + 1}: {timelineBlocks[currentHighlightedBlockIndex]?.charA_action?.toUpperCase() || 'APPROACH'}
                 </span>
-                <span>{totalDuration.toFixed(1)}s</span>
+                <span>{formatTime(clipEnd)}</span>
               </div>
             </div>
 
             {/* Transport Buttons */}
             <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-2">
-                {/* Restart to 0s */}
                 <button
                   type="button"
-                  onClick={() => seek(0)}
-                  className="p-2 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition active:scale-95 cursor-pointer"
-                  title="Restart to Beginning"
+                  onClick={() => seek(clipStart)}
+                  className="p-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition active:scale-95 cursor-pointer shadow"
+                  title="Restart to Beginning of Cropped Cut"
                 >
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                     <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
@@ -468,52 +505,44 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                       <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                         <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                       </svg>
-                      <span>PAUSE PREVIEW</span>
+                      <span>PAUSE STORY</span>
                     </>
                   ) : (
                     <>
                       <svg className="w-4 h-4 fill-current translate-x-0.5" viewBox="0 0 24 24">
                         <path d="M8 5v14l11-7z" />
                       </svg>
-                      <span>PLAY PREVIEW</span>
+                      <span>PLAY STORY</span>
                     </>
                   )}
                 </button>
               </div>
 
-              {/* Presets dropdown / pill */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-neutral-400 font-semibold uppercase hidden sm:inline">
-                  Presets:
-                </span>
+              {/* SFX Quick Test Button */}
+              {activeScene?.sfx && activeScene.sfx !== 'none' && (
                 <button
                   type="button"
-                  onClick={() => handleApplyPreset('makossa')}
-                  className="text-[10px] font-bold px-2 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 text-[#FACC15] border border-neutral-700 transition cursor-pointer"
+                  onClick={() => playSFX(activeScene.sfx as StorySFX)}
+                  className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-[#FACC15] border border-neutral-700 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                  title="Test Scene Sound Effect"
                 >
-                  Makossa
+                  <span>🔊</span>
+                  <span>SFX: {activeScene.sfx}</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleApplyPreset('high_energy')}
-                  className="text-[10px] font-bold px-2 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 text-[#F43F5E] border border-neutral-700 transition cursor-pointer"
-                >
-                  Energy
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* RIGHT COLUMN: STUDIO CONTROL DECK (lg:col-span-6) */}
+        {/* RIGHT COLUMN: SCENE EDITOR & CASTING (lg:col-span-6) */}
         {/* ========================================================= */}
         <div className="lg:col-span-6 space-y-6">
-          {/* 1. Song / Challenge Selector (FR-20) */}
+          {/* 1. Song / Challenge Selector */}
           <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>1. Select Challenge Song</span>
+                <span>1. Challenge Song</span>
                 <span className="text-[#FACC15]">★</span>
               </label>
               <span className="text-[10px] text-neutral-400">
@@ -523,28 +552,26 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
             <div className="relative">
               <select
+                disabled={loading}
                 value={selectedChallenge?.id || ''}
                 onChange={(e) => {
                   const found = challenges.find((c) => c.id === e.target.value)
                   if (found) {
                     setSelectedChallenge(found)
-                    if (found.song) playSong(found.song)
-                    const dur = found.song?.duration_sec || 24
-                    const blockDuration = dur / 8
-                    setTimelineBlocks((prev) =>
-                      prev.map((block, i) => ({
-                        start: Math.round(i * blockDuration * 10) / 10,
-                        end: Math.round((i + 1) * blockDuration * 10) / 10,
-                        action: block.action || 'sway',
-                      }))
-                    )
+                    if (found.song) {
+                      loadSong(found.song, clipStart)
+                      if (isPlaying) {
+                        playSong(found.song, clipStart)
+                      }
+                    }
                   }
                 }}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-3 text-sm text-white font-semibold focus:outline-none focus:border-[#536D56] cursor-pointer appearance-none"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-3 text-sm text-white font-semibold focus:outline-none focus:border-[#536D56] cursor-pointer appearance-none disabled:opacity-60"
               >
+                {loading && <option value="">Loading challenges...</option>}
                 {challenges.map((ch) => (
                   <option key={ch.id} value={ch.id}>
-                    {ch.song?.title || 'Unknown Track'} — {ch.song?.genre || 'Afropop'} ({ch.song?.bpm || 110} BPM)
+                    {ch.song?.title || 'Unknown Track'} — {ch.song?.genre || 'Afropop'} ({ch.song?.bpm || 115} BPM)
                   </option>
                 ))}
               </select>
@@ -554,311 +581,633 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             </div>
           </div>
 
-          {/* 2. Character Pickers (3 Circular Avatars: Tantie, Mboa Boy, Pa Buea, FR-20) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>2. Choose Character (Open Peeps)</span>
-                <span className="text-[#FACC15]">✦</span>
-              </label>
-              <span className="text-[10px] font-mono text-[#8FA993]">
-                2-Pose Engine
-              </span>
+          {/* 1.5 Compact Song Section Cropper Bar (FR-20, FR-22) */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#121212] border border-[#536D56]/50 shadow-xl space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-base">✂️</span>
+                <span className="text-xs font-bold text-neutral-200 uppercase tracking-wider">
+                  Crop Song Section
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#536D56]/30 text-[#8FA993] border border-[#536D56]/50 font-semibold">
+                  Chorus / Slice
+                </span>
+              </div>
+
+              {/* Time window display (e.g. 0:42 — 0:58 • 16s selected) */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs sm:text-sm font-mono font-black text-[#FACC15] bg-neutral-900 px-3 py-1 rounded-xl border border-neutral-800 shadow-inner">
+                  {formatTime(clipStart)} — {formatTime(clipEnd)} • {Math.round(clipEnd - clipStart)}s selected
+                </span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              {CHARACTERS.map((char) => {
-                const isSelected = selectedCharacter === char.id
+            {/* Quick Presets Pills */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              <span className="text-[10px] text-neutral-400 font-semibold mr-1">Presets:</span>
+              {[
+                { label: '🔥 Chorus (Kocee)', start: 42, end: 58 },
+                { label: '⚡ Intro', start: 0, end: 16 },
+                { label: '🎶 Hook 2', start: 72, end: 92 },
+                { label: '💥 Outro', start: 120, end: 140 },
+              ].map((p, pIdx) => {
+                const isActive = clipStart === p.start && clipEnd === p.end
                 return (
                   <button
-                    key={char.id}
+                    key={pIdx}
                     type="button"
-                    onClick={() => setSelectedCharacter(char.id)}
-                    className={`relative flex flex-col items-center text-center p-3 sm:p-4 rounded-2xl border transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-[#536D56]/20 border-[#F43F5E] shadow-[0_0_15px_rgba(244,63,94,0.3)] scale-[1.02]'
-                        : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                    onClick={() => handleCropChange(p.start, p.end)}
+                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition active:scale-95 cursor-pointer border ${
+                      isActive
+                        ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow'
+                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
                     }`}
                   >
-                    {/* Selected Checkmark Badge */}
-                    {isSelected && (
-                      <span className="absolute top-2 right-2 w-4 h-4 rounded-full bg-[#F43F5E] text-white flex items-center justify-center text-[10px] font-bold">
-                        ✓
-                      </span>
-                    )}
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
 
-                    {/* Circular Avatar */}
+            {/* Visual Audio Waveform Scrubber */}
+            <div className="relative pt-2 pb-1">
+              {/* Waveform Bars Container */}
+              <div className="relative h-14 w-full bg-neutral-950/80 rounded-2xl p-2.5 flex items-center justify-between gap-1 overflow-hidden border border-neutral-800">
+                {WAVEFORM_BARS.map((height, i) => {
+                  const barPct = (i / (WAVEFORM_BARS.length - 1)) * 100
+                  const startPct = (clipStart / fullSongDuration) * 100
+                  const endPct = (clipEnd / fullSongDuration) * 100
+                  const inWindow = barPct >= startPct && barPct <= endPct
+
+                  return (
                     <div
-                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden flex items-center justify-center mb-2 transition-transform ${
-                        isSelected
-                          ? 'ring-4 ring-[#F43F5E] bg-neutral-800 scale-105'
-                          : 'bg-neutral-800/80 ring-1 ring-neutral-700'
-                      }`}
+                      key={i}
+                      className="flex-1 flex items-center justify-center h-full"
                     >
-                      <CharacterAvatarCircle
-                        characterId={char.id}
-                        displayName={char.displayName}
-                        fallbackEmoji={char.avatar}
+                      <div
+                        className={`w-full max-w-[4px] rounded-full transition-all duration-150 ${
+                          inWindow
+                            ? 'bg-gradient-to-t from-[#536D56] via-[#FACC15] to-[#F43F5E] opacity-95 shadow-[0_0_6px_rgba(250,204,21,0.4)]'
+                            : 'bg-neutral-700 opacity-25'
+                        }`}
+                        style={{ height: `${height}%` }}
                       />
                     </div>
+                  )
+                })}
 
-                    <span className="text-xs font-black text-white leading-tight">
-                      {char.displayName}
-                    </span>
-                    <span className="text-[10px] text-neutral-400 mt-0.5 truncate w-full">
-                      {char.subtitle}
-                    </span>
-                    <span className="text-[9px] font-semibold text-[#FACC15] mt-1 bg-black/40 px-2 py-0.5 rounded-full">
-                      {char.badge}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
+                {/* Shaded Left Inactive Region */}
+                <div
+                  className="absolute top-0 bottom-0 left-0 bg-black/60 pointer-events-none transition-all duration-75"
+                  style={{ width: `${(clipStart / fullSongDuration) * 100}%` }}
+                />
 
-          {/* 3. Stage Background 4-Swatch Switcher Bar (Pure CSS + SVG, NFR-2) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>3. Stage Background</span>
-                <span className="text-[#8FA993]">✦</span>
-              </label>
-              <span className="text-[10px] text-neutral-400 font-mono">
-                Pure CSS + SVG
-              </span>
-            </div>
+                {/* Shaded Right Inactive Region */}
+                <div
+                  className="absolute top-0 bottom-0 right-0 bg-black/60 pointer-events-none transition-all duration-75"
+                  style={{ width: `${100 - (clipEnd / fullSongDuration) * 100}%` }}
+                />
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              {BACKGROUND_SWATCHES.map((swatch) => {
-                const isSelected = backgroundTheme === swatch.id
-                return (
-                  <button
-                    key={swatch.id}
-                    type="button"
-                    onClick={() => setBackgroundTheme(swatch.id)}
-                    className={`flex items-center gap-2.5 p-2.5 rounded-2xl border transition-all text-left cursor-pointer ${
-                      isSelected
-                        ? 'bg-neutral-800 border-white shadow-md ring-2'
-                        : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                    style={{
-                      outlineColor: isSelected ? swatch.ringColor : undefined,
-                    }}
-                  >
-                    {/* Swatch circle */}
-                    <div
-                      className={`w-7 h-7 rounded-full bg-gradient-to-tr ${swatch.colors} shrink-0 shadow-inner border border-white/20`}
-                    />
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-bold text-white truncate">
-                        {swatch.name}
-                      </div>
-                      <div className="text-[9px] text-neutral-400 truncate">
-                        {swatch.id === 'sage_starburst' ? 'Olive & Coral' : 'Afro Theme'}
-                      </div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 4. 8-Block Horizontal Beat Timeline (FR-21) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>4. 8-Block Beat Timeline</span>
-                <span className="text-[#FACC15]">⏱</span>
-              </label>
-              <span className="text-[10px] text-neutral-400">
-                Tap block to edit or seek
-              </span>
-            </div>
-
-            {/* 8 Horizontal Beat Blocks */}
-            <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
-              {timelineBlocks.map((block, idx) => {
-                const isCurrentPlaying = currentHighlightedBlockIndex === idx && isPlaying
-                const isSelectedForEdit = activeBlockIndex === idx
-
-                return (
+                {/* Live Playhead Needle Marker */}
+                {currentTime >= 0 && (
                   <div
-                    key={idx}
-                    onClick={() => handleSelectBlock(idx)}
-                    className={`relative p-2 rounded-2xl border flex flex-col items-center justify-between min-h-[74px] transition-all cursor-pointer ${
-                      isSelectedForEdit
-                        ? 'bg-[#536D56]/30 border-[#FACC15] ring-2 ring-[#FACC15]/60'
-                        : isCurrentPlaying
-                        ? 'bg-neutral-800 border-[#F43F5E] animate-pulse'
-                        : 'bg-neutral-900 border-neutral-800 hover:border-neutral-700'
-                    }`}
-                  >
-                    {/* Block index pill */}
-                    <div className="flex items-center justify-between w-full text-[9px] font-mono text-neutral-400">
-                      <span>#{idx + 1}</span>
-                      {isCurrentPlaying && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#F43F5E] animate-ping" />
-                      )}
-                    </div>
+                    className="absolute top-0 bottom-0 w-0.5 bg-[#FACC15] shadow-[0_0_8px_#FACC15] pointer-events-none z-20 transition-all duration-75"
+                    style={{ left: `${Math.min(100, Math.max(0, (currentTime / fullSongDuration) * 100))}%` }}
+                  />
+                )}
+              </div>
 
-                    {/* Move Icon */}
-                    <div className="text-xl my-0.5">
-                      {block.action === 'sway' && '🕺'}
-                      {block.action === 'stomp' && '👞'}
-                      {block.action === 'jump' && '🦘'}
-                      {block.action === 'flex' && '💪'}
-                    </div>
-
-                    {/* Action Label */}
-                    <span className="text-[10px] font-black uppercase text-white truncate">
-                      {block.action}
+              {/* Cropper Sliders Container */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
+                {/* Start Time Slider */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-neutral-300">
+                    <span className="font-bold flex items-center gap-1 text-[#8FA993]">
+                      <span>▶</span> Start Cut:
                     </span>
-
-                    {/* Timing */}
-                    <span className="text-[8px] font-mono text-neutral-400">
-                      {block.start}s
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCropChange(clipStart - 1, clipEnd)}
+                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
+                      >
+                        -1s
+                      </button>
+                      <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
+                        {formatTime(clipStart)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCropChange(clipStart + 1, clipEnd)}
+                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
+                      >
+                        +1s
+                      </button>
+                    </div>
                   </div>
-                )
-              })}
-            </div>
-          </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={Math.max(0, clipEnd - 8)}
+                    step={1}
+                    value={clipStart}
+                    onChange={(e) => handleCropChange(parseFloat(e.target.value), clipEnd)}
+                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#536D56]"
+                  />
+                </div>
 
-          {/* 5. 4 Move Pads (Sway, Stomp, Jump, Flex, FR-21) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>5. Move Pads (Tap to Assign Block #{activeBlockIndex + 1})</span>
-                <span className="text-[#F43F5E]">✦</span>
-              </label>
-              <span className="text-[10px] text-[#8FA993] font-semibold">
-                Auto-advances
-              </span>
+                {/* End Time Slider */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-neutral-300">
+                    <span className="font-bold flex items-center gap-1 text-[#F43F5E]">
+                      <span>⏹</span> End Cut:
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleCropChange(clipStart, clipEnd - 1)}
+                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
+                      >
+                        -1s
+                      </button>
+                      <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
+                        {formatTime(clipEnd)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleCropChange(clipStart, clipEnd + 1)}
+                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
+                      >
+                        +1s
+                      </button>
+                    </div>
+                  </div>
+                  <input
+                    type="range"
+                    min={clipStart + 8}
+                    max={Math.min(fullSongDuration, clipStart + 30)}
+                    step={1}
+                    value={clipEnd}
+                    onChange={(e) => handleCropChange(clipStart, parseFloat(e.target.value))}
+                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#F43F5E]"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {MOVE_PADS.map((pad) => (
-                <button
-                  key={pad.action}
-                  type="button"
-                  onClick={() => handleAssignMove(pad.action)}
-                  className={`p-3.5 rounded-2xl bg-gradient-to-br ${pad.color} border text-white flex flex-col items-center justify-center gap-1 shadow-lg hover:scale-105 active:scale-95 transition cursor-pointer group`}
-                >
-                  <span className="text-2xl group-hover:scale-110 transition-transform">
-                    {pad.icon}
-                  </span>
-                  <span className="text-xs font-black uppercase tracking-wide">
-                    {pad.label}
-                  </span>
-                  <span className="text-[9px] text-neutral-200 text-center leading-tight">
-                    {pad.desc}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 6. Caption & Quick Reaction Stickers (FR-23) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>6. Speech Caption & Reactions</span>
-                <span className="text-[#FACC15]">💬</span>
-              </label>
+            {/* Preview Cut Action Bar */}
+            <div className="flex items-center justify-between pt-1 border-t border-neutral-800/80">
               <span className="text-[10px] text-neutral-400">
-                English · French · Pidgin
+                Min 8s • Max 30s • Auto-divided into 4 scenes
+              </span>
+
+              <button
+                type="button"
+                onClick={handlePreviewCut}
+                className="py-1.5 px-4 rounded-xl bg-[#536D56] hover:bg-[#607d64] text-white font-bold text-xs flex items-center gap-1.5 transition active:scale-95 cursor-pointer shadow-md"
+              >
+                <span>▶</span>
+                <span>Preview Cut</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 2. Character Casting (Character A & Character B) */}
+          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                <span>2. Character Casting (2-Actor Stage)</span>
+                <span className="text-[#FACC15]">✦</span>
+              </label>
+              <span className="text-[10px] text-[#8FA993] font-mono">
+                Open Peeps 2D
               </span>
             </div>
 
-            {/* Quick Stickers Row */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-semibold text-neutral-400 uppercase">
-                Stickers:
+            {/* Character A Picker (Left) */}
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold text-neutral-300">
+                Lead Actor (Left):
               </span>
-              {QUICK_STICKERS.map((stk) => (
+              <div className="grid grid-cols-3 gap-2">
+                {CHARACTERS.map((char) => {
+                  const isSelected = characterA === char.id
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => setCharacterA(char.id)}
+                      className={`flex flex-col items-center text-center p-2.5 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
+                          : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-full overflow-hidden mb-1.5">
+                        <CharacterAvatarCircle
+                          characterId={char.id}
+                          displayName={char.displayName}
+                          fallbackEmoji={char.avatar}
+                        />
+                      </div>
+                      <span className="text-xs font-black text-white leading-tight">
+                        {char.displayName}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Character B Picker (Right / Optional Companion) */}
+            <div className="space-y-2 pt-2 border-t border-neutral-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-neutral-300">
+                  Companion Actor (Right):
+                </span>
+                <span className="text-[10px] text-neutral-400">
+                  Optional 2nd Actor
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
                 <button
-                  key={stk.label}
                   type="button"
-                  onClick={() => {
-                    setActiveSticker(null)
-                    setTimeout(() => setActiveSticker(stk.label), 20)
-                    setCaption(stk.label)
-                  }}
-                  className={`px-3 py-1.5 rounded-full text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
-                    activeSticker === stk.label
-                      ? 'bg-[#FACC15] text-neutral-950 border-neutral-950 shadow-[2px_2px_0px_#000] scale-105'
-                      : 'bg-neutral-900 text-white border-neutral-700 hover:border-neutral-500'
+                  onClick={() => setCharacterB('none')}
+                  className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-center transition cursor-pointer ${
+                    characterB === 'none'
+                      ? 'bg-neutral-800 border-[#F43F5E] text-[#F43F5E]'
+                      : 'bg-neutral-900/60 border-neutral-800 text-neutral-400'
                   }`}
                 >
-                  <span>{stk.icon}</span>
-                  <span>{stk.label}</span>
+                  <span className="text-xl mb-1">✖️</span>
+                  <span className="text-[10px] font-bold">Solo Mode</span>
                 </button>
-              ))}
+                {CHARACTERS.map((char) => {
+                  const isSelected = characterB === char.id
+                  return (
+                    <button
+                      key={char.id}
+                      type="button"
+                      onClick={() => setCharacterB(char.id)}
+                      className={`flex flex-col items-center text-center p-2.5 rounded-2xl border transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
+                          : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="w-10 h-10 rounded-full overflow-hidden mb-1">
+                        <CharacterAvatarCircle
+                          characterId={char.id}
+                          displayName={char.displayName}
+                          fallbackEmoji={char.avatar}
+                        />
+                      </div>
+                      <span className="text-[10px] font-bold text-white truncate w-full">
+                        {char.displayName}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. Scene Action & Dialogue Editor (for Active Scene) */}
+          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                <span>3. Edit Scene #{activeSceneIndex + 1} Actions & Dialogue</span>
+                <span className="text-[#FACC15]">🎬</span>
+              </label>
+              <span className="text-[10px] font-mono text-[#FACC15] bg-black/40 px-2 py-0.5 rounded-full">
+                {activeScene.start}s – {activeScene.end}s
+              </span>
             </div>
 
-            {/* Caption Input */}
-            <div className="space-y-2">
+            {/* Comic Dialogue Input for Character A */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span>{characterA.toUpperCase()} Dialogue (Top-Left Bubble):</span>
+              </label>
               <input
                 type="text"
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
+                value={activeScene.dialogueA || ''}
+                onChange={(e) => updateActiveScene({ dialogueA: e.target.value })}
+                placeholder="Enter speech in English, French or Pidgin..."
                 maxLength={80}
-                placeholder="Add caption in Pidgin, French, or English..."
-                className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-3 text-sm text-white font-medium focus:outline-none focus:border-[#536D56]"
+                className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
               />
+            </div>
 
-              {/* Quick Cameroon Phrase Chips */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {CAMEROON_PHRASES.map((ph, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setCaption(ph)}
-                    className="text-[10px] px-2.5 py-1 rounded-full bg-neutral-900/80 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 transition cursor-pointer"
+            {/* Comic Dialogue Input for Character B (if active) */}
+            {characterB !== 'none' && (
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-sky-400" />
+                  <span>{characterB.toUpperCase()} Dialogue (Top-Right Bubble):</span>
+                </label>
+                <input
+                  type="text"
+                  value={activeScene.dialogueB || ''}
+                  onChange={(e) => updateActiveScene({ dialogueB: e.target.value })}
+                  placeholder="Enter speech in English, French or Pidgin..."
+                  maxLength={80}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
+                />
+              </div>
+            )}
+
+            {/* 12 Story Actions for Character A */}
+            <div className="space-y-2 pt-2 border-t border-neutral-800">
+              <span className="text-[11px] font-bold text-neutral-300">
+                {characterA.toUpperCase()} Action:
+              </span>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                {STORY_ACTIONS.map((act) => {
+                  const isSelected = (activeScene.charA_action || activeScene.action) === act.id
+                  return (
+                    <button
+                      key={act.id}
+                      type="button"
+                      onClick={() => updateActiveScene({ charA_action: act.id, action: act.id })}
+                      className={`p-2 rounded-xl text-left border text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                        isSelected
+                          ? 'bg-[#536D56] text-white border-[#F43F5E] shadow font-bold'
+                          : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                      }`}
+                    >
+                      <span>{act.icon}</span>
+                      <span className="truncate">{act.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* 12 Story Actions for Character B (if active) */}
+            {characterB !== 'none' && (
+              <div className="space-y-2 pt-2 border-t border-neutral-800">
+                <span className="text-[11px] font-bold text-neutral-300">
+                  {characterB.toUpperCase()} Action:
+                </span>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                  {STORY_ACTIONS.map((act) => {
+                    const isSelected = activeScene.charB_action === act.id
+                    return (
+                      <button
+                        key={act.id}
+                        type="button"
+                        onClick={() => updateActiveScene({ charB_action: act.id })}
+                        className={`p-2 rounded-xl text-left border text-xs transition cursor-pointer flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-[#536D56] text-white border-[#F43F5E] shadow font-bold'
+                            : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                        }`}
+                      >
+                        <span>{act.icon}</span>
+                        <span className="truncate">{act.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Environment, Parallax Motion, Props & SFX Editor */}
+          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
+            <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+              <span>4. Environment, Camera, Prop & SFX</span>
+              <span className="text-[#FACC15]">🌄</span>
+            </label>
+
+            {/* Background Environments */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-neutral-300">
+                Illustrated Setting:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {STORY_BACKGROUNDS.slice(0, 4).map((bg) => {
+                  const isSelected = (activeScene.bg || 'street_buea') === bg.id
+                  return (
+                    <button
+                      key={bg.id}
+                      type="button"
+                      onClick={() => updateActiveScene({ bg: bg.id })}
+                      className={`p-2 rounded-2xl border text-center transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#536D56]/30 border-[#F43F5E] text-white shadow'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="text-xl mb-0.5">{bg.icon}</div>
+                      <div className="text-[10px] font-bold truncate">{bg.label}</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Parallax Motion & Camera Zoom */}
+            <div className="space-y-1.5 pt-2 border-t border-neutral-800">
+              <span className="text-[11px] font-bold text-neutral-300">
+                Camera Motion:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {BG_MOTIONS.map((m) => {
+                  const isSelected = (activeScene.bgMotion || 'static') === m.id
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => updateActiveScene({ bgMotion: m.id })}
+                      className={`p-2 rounded-xl border text-center transition cursor-pointer text-xs ${
+                        isSelected
+                          ? 'bg-[#536D56] text-white border-[#F43F5E] font-bold'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:border-neutral-700'
+                      }`}
+                    >
+                      <span className="mr-1">{m.icon}</span>
+                      <span className="text-[10px]">{m.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Scene Prop & Sound Effect Row */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-neutral-800">
+              {/* Scene Prop */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-neutral-300">
+                  Scene Prop:
+                </span>
+                <select
+                  value={activeScene.prop || 'none'}
+                  onChange={(e) => updateActiveScene({ prop: e.target.value as StoryProp })}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#536D56] cursor-pointer"
+                >
+                  {STORY_PROPS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.icon} {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sound Effect (SFX) */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-neutral-300">
+                  Story Sound Effect (SFX):
+                </span>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={activeScene.sfx || 'none'}
+                    onChange={(e) => {
+                      const val = e.target.value as StorySFX
+                      updateActiveScene({ sfx: val })
+                      if (val !== 'none') playSFX(val)
+                    }}
+                    className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#536D56] cursor-pointer"
                   >
-                    {ph}
-                  </button>
-                ))}
+                    {STORY_SFX_LIST.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.icon} {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* 7. Submit to Challenge Button (FR-17, FR-24) */}
-          <div className="space-y-3 pt-2">
-            {submitError && (
-              <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-600/50 text-rose-200 text-xs font-semibold flex items-center gap-2">
-                <span>⚠️</span>
-                <span>{submitError}</span>
-              </div>
-            )}
+          {/* Submission Feedback & Submit Button */}
+          {submitError && (
+            <div className="p-3.5 rounded-2xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs flex items-center gap-2">
+              <span>⚠️</span>
+              <span>{submitError}</span>
+            </div>
+          )}
 
-            {submitSuccess && (
-              <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-600/50 text-emerald-200 text-xs font-semibold flex items-center gap-2 animate-fade-in">
-                <span>🎉</span>
-                <span>BeatToon submitted successfully! Redirecting to feed...</span>
-              </div>
-            )}
+          {submitSuccess && (
+            <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/50 text-emerald-200 text-xs flex items-center gap-2">
+              <span>🎉</span>
+              <span>Story posted successfully! Redirecting to feed...</span>
+            </div>
+          )}
 
-            <button
-              type="button"
-              disabled={submitting || submitSuccess}
-              onClick={handleSubmit}
-              className="w-full py-4 rounded-full font-black text-sm bg-white hover:bg-neutral-100 active:scale-98 text-neutral-950 shadow-2xl transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {submitting ? (
-                <>
-                  <span className="w-4 h-4 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
-                  <span>Submitting to Challenge...</span>
-                </>
-              ) : (
-                <>
-                  <span>Submit to Challenge</span>
-                  <span className="text-[#F43F5E] text-base">✦</span>
-                </>
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={submitting || submitSuccess}
+            onClick={handleSubmit}
+            className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#F43F5E] via-[#E11D48] to-[#BE123C] hover:opacity-95 text-white font-black text-sm uppercase tracking-wider shadow-2xl active:scale-[0.99] transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {submitting ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Publishing Story to Challenge...</span>
+              </>
+            ) : submitSuccess ? (
+              <>
+                <span>✓</span>
+                <span>Story Published!</span>
+              </>
+            ) : (
+              <>
+                <span>🚀</span>
+                <span>Submit Story to Challenge</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================================= */}
+      {/* 3. BOTTOM SCENE TIMELINE BAR (Visual Scene Cards) */}
+      {/* ========================================================= */}
+      <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-2xl space-y-3">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+            <span>Scene Timeline ({timelineBlocks.length} Scenes)</span>
+            <span className="text-[#FACC15]">🎬</span>
+          </label>
+          <span className="text-[10px] text-neutral-400">
+            Click any scene to edit dialogue, moves, environment & SFX
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {timelineBlocks.map((block, idx) => {
+            const isEditing = activeSceneIndex === idx
+            const isLive = currentHighlightedBlockIndex === idx && isPlaying
+            const bgInfo = STORY_BACKGROUNDS.find((b) => b.id === (block.bg || 'street_buea'))
+            const actInfo = STORY_ACTIONS.find((a) => a.id === (block.charA_action || block.action))
+            const sfxInfo = STORY_SFX_LIST.find((s) => s.id === block.sfx)
+
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSelectScene(idx)}
+                className={`relative flex flex-col p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                  isEditing
+                    ? 'bg-[#536D56]/30 border-[#F43F5E] shadow-[0_0_15px_rgba(244,63,94,0.3)] scale-[1.02]'
+                    : isLive
+                    ? 'bg-neutral-800 border-[#FACC15]'
+                    : 'bg-neutral-900/80 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                {/* Live Playback Indicator Pill */}
+                {isLive && (
+                  <span className="absolute -top-2 right-2 px-2 py-0.5 rounded-full bg-[#FACC15] text-neutral-950 font-black text-[9px] uppercase tracking-wider shadow">
+                    PLAYING
+                  </span>
+                )}
+
+                <div className="flex items-center justify-between text-xs font-black text-white">
+                  <span>Scene {idx + 1}</span>
+                  <span className="text-[10px] font-mono text-neutral-400">
+                    {block.start}s – {block.end}s
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1 text-[10px] text-[#8FA993] font-semibold mt-1">
+                  <span>{bgInfo?.icon || '🌄'}</span>
+                  <span className="truncate">{bgInfo?.label || 'Buea Street'}</span>
+                </div>
+
+                <div className="text-[11px] font-bold text-white mt-1 truncate">
+                  {actInfo?.icon} {actInfo?.label || 'Approach'}
+                  {block.charB_action && block.charB_action !== 'none' && (
+                    <span className="text-[#A1A1AA] text-[10px] ml-1">
+                      + {block.charB_action}
+                    </span>
+                  )}
+                </div>
+
+                {/* Dialogue Preview Snippet */}
+                <p className="text-[9px] text-neutral-400 mt-1 line-clamp-1 italic">
+                  "{block.dialogueA || block.dialogueB || 'No dialogue'}"
+                </p>
+
+                {/* SFX / Prop Badge */}
+                <div className="flex items-center gap-1 mt-2">
+                  {sfxInfo && sfxInfo.id !== 'none' && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#FACC15]/20 text-[#FACC15] font-mono font-bold flex items-center gap-0.5">
+                      <span>{sfxInfo.icon}</span>
+                      <span>{sfxInfo.label}</span>
+                    </span>
+                  )}
+                  {block.prop && block.prop !== 'none' && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neutral-800 text-neutral-300 font-mono">
+                      {block.prop}
+                    </span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
