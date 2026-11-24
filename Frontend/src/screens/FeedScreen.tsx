@@ -11,7 +11,8 @@ import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 import { ReportModal } from '../components/ReportModal'
-import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
+import { MixamoStoryStage } from '../components/MixamoStoryStage'
+import type { BackgroundTheme } from '../components/StagePlayer'
 
 export const FeedScreen: React.FC = () => {
   const { user, token, openLoginModal } = useAuth()
@@ -138,7 +139,7 @@ export const FeedScreen: React.FC = () => {
     }
 
     setActiveCreationId(creation.id)
-    const clipUrl = creation.song?.clip_url || '/assets/audio/kocee_we_di_go_na_go.mp3'
+    const clipUrl = creation.song?.clip_url || '/assets/audio/we-di-go-na-go.mp3'
     const clipStart = creation.moves_timeline?.[0]?.start ?? 0
     playSong(
       {
@@ -273,7 +274,7 @@ export const FeedScreen: React.FC = () => {
 
                   return (
                     <div className="relative w-full rounded-2xl overflow-hidden border border-[#536D56]/50 shadow-inner">
-                      <StagePlayer
+                      <MixamoStoryStage
                         characterId={item.character_id || item.character || 'tantie'}
                         characterAId={item.moves_timeline?.[0]?.charA_id || item.character_id || item.character || 'tantie'}
                         characterBId={item.moves_timeline?.[0]?.charB_id}

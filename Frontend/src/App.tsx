@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { AuthProvider } from './context/AuthContext'
 import { LanguageProvider } from './context/LanguageContext'
-import { AudioProvider } from './context/AudioContext'
+import { AudioProvider, useAudio } from './context/AudioContext'
 import { Sidebar } from './components/Sidebar'
 import { MobileHeader } from './components/MobileHeader'
 import { MobileBottomNav } from './components/MobileBottomNav'
@@ -31,25 +31,30 @@ function resolveInitialTab(): string {
 
 const MainShell: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>(resolveInitialTab)
+  const { pauseSong } = useAudio()
 
   const handleTabChange = (tab: string) => {
+    if (tab !== currentTab) {
+      pauseSong()
+    }
     setCurrentTab(tab)
     if (typeof window !== 'undefined') {
       window.location.hash = `#${tab}`
     }
   }
 
-  // Handle browser back/forward or hash changes
+  // Handle browser back/forward or hash changes and cleanly pause audio
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '').toLowerCase()
       if (['trending', 'challenges', 'feed', 'studio', 'account'].includes(hash)) {
+        pauseSong()
         setCurrentTab(hash)
       }
     }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
-  }, [])
+  }, [pauseSong])
 
   return (
     <div className="min-h-screen bg-[#8FA993] text-neutral-100 flex flex-col items-center justify-start p-0 md:p-4">
