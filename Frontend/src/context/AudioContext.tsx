@@ -133,18 +133,40 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [isPlaying, hasError, duration])
 
+  // Safe seek helper that respects audio readyState to avoid decoder crashes and popping
+  const safeSeek = (audioEl: HTMLAudioElement, targetSec: number) => {
+    if (isNaN(targetSec) || targetSec < 0) return
+    const doSeek = () => {
+      try {
+        if (Math.abs(audioEl.currentTime - targetSec) > 0.08) {
+          audioEl.currentTime = targetSec
+        }
+      } catch {
+        // ignore seek bounds error
+      }
+    }
+    if (audioEl.readyState >= 1) {
+      doSeek()
+    } else {
+      audioEl.addEventListener('loadedmetadata', doSeek, { once: true })
+    }
+  }
+
   // Play real MP3 song - synchronous audioRef.current.play() inside caller's click handler
   const playSong = (song: Song, startTime?: number) => {
     if (!audioRef.current) return
 
     const resolvedUrl = resolveClipUrl(song.clip_url, `${song.id} ${song.title} ${song.genre}`)
     const targetSong: Song = { ...song, clip_url: resolvedUrl }
-    const isSameSong = currentSong?.id === song.id && (audioRef.current.src.endsWith(resolvedUrl) || audioRef.current.src === resolvedUrl)
+    const targetStartTime = startTime ?? 0
+    const isSameSong =
+      currentSong?.id === song.id &&
+      (audioRef.current.src.endsWith(resolvedUrl) || audioRef.current.src === resolvedUrl)
 
     if (isSameSong) {
-      if (startTime !== undefined) {
-        audioRef.current.currentTime = startTime
-        setCurrentTime(startTime)
+      if (startTime !== undefined && Math.abs(audioRef.current.currentTime - targetStartTime) > 0.15) {
+        safeSeek(audioRef.current, targetStartTime)
+        setCurrentTime(targetStartTime)
       }
       if (!isPlaying) {
         audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(true))
@@ -153,24 +175,22 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     setCurrentSong(targetSong)
-    const initialTime = startTime ?? 0
-    setCurrentTime(initialTime)
+    setCurrentTime(targetStartTime)
     setDuration(song.duration_sec || 24)
     hasErrorRef.current = false
     setHasError(false)
 
-    // Assign source & immediately trigger play directly inside user click handler
+    // Assign source & pre-position playhead cleanly before playback starts
     audioRef.current.src = resolvedUrl
-    audioRef.current.currentTime = initialTime
+    if (targetStartTime > 0) {
+      safeSeek(audioRef.current, targetStartTime)
+    }
 
     const playPromise = audioRef.current.play()
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
           setIsPlaying(true)
-          if (startTime !== undefined && audioRef.current) {
-            audioRef.current.currentTime = startTime
-          }
           hasErrorRef.current = false
           setHasError(false)
         })
@@ -178,7 +198,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           console.warn('Audio playback error, falling back to local song asset:', err)
           if (audioRef.current) {
             audioRef.current.src = '/assets/audio/kocee_we_di_go_na_go.mp3'
-            if (startTime !== undefined) audioRef.current.currentTime = startTime
+            if (targetStartTime > 0) safeSeek(audioRef.current, targetStartTime)
             audioRef.current
               .play()
               .then(() => {
@@ -206,7 +226,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audioRef.current.src = resolvedUrl
     }
     const initialTime = startTime ?? 0
-    audioRef.current.currentTime = initialTime
+    if (initialTime > 0) {
+      safeSeek(audioRef.current, initialTime)
+    }
     setCurrentTime(initialTime)
   }
 
@@ -242,11 +264,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const seek = (seconds: number) => {
     setCurrentTime(seconds)
     if (audioRef.current && !hasErrorRef.current) {
-      try {
-        audioRef.current.currentTime = seconds
-      } catch {
-        // ignore seek boundary error
-      }
+      safeSeek(audioRef.current, seconds)
     }
   }
 

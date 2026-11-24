@@ -62,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
   ]
 
   return (
-    <aside className="hidden md:flex flex-col justify-between w-64 h-[calc(100vh-2rem)] sticky top-4 bg-[#121212] border border-[#536D56]/40 rounded-3xl p-5 shadow-2xl shrink-0">
+    <aside className="hidden md:flex flex-col justify-between w-60 lg:w-64 h-full bg-[#121212] border border-[#536D56]/40 rounded-3xl p-4 lg:p-5 shadow-2xl shrink-0 overflow-y-auto">
       {/* Top Section */}
       <div className="space-y-6">
         {/* Logo with starburst */}

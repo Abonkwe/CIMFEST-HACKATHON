@@ -340,7 +340,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+    <div className="space-y-6 w-full pb-24">
       {/* ========================================================= */}
       {/* 1. TOP HEADER & 1-CLICK STORY TEMPLATES BAR */}
       {/* ========================================================= */}

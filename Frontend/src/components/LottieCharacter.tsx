@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react'
-import Lottie from 'lottie-react'
+import { Lottie } from 'lottie-react'
 import { useLottieAnimation } from '../lib/lottieActions'
 import { PuppetCharacter } from './PuppetCharacter'
 

@@ -73,7 +73,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
   const isTrendingView = currentTab === 'trending'
 
   return (
-    <aside className="hidden lg:flex flex-col w-80 h-[calc(100vh-2rem)] sticky top-4 bg-[#121212] border border-[#536D56]/40 rounded-3xl p-5 shadow-2xl shrink-0 overflow-y-auto">
+    <aside className="hidden lg:flex flex-col w-72 xl:w-80 h-full bg-[#121212] border border-[#536D56]/40 rounded-3xl p-4 xl:p-5 shadow-2xl shrink-0 overflow-y-auto">
       {isTrendingView ? (
         // Trending View: Cameroon Trending Chart Tracklist
         <div className="space-y-4">

@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
 import type { MoveBlock, StoryBackground, StoryProp, StorySFX, BgMotion } from '../types'
 import { storySFX } from '../lib/audioUtils'
-import { PuppetCharacter } from './PuppetCharacter'
 import { LottieCharacter } from './LottieCharacter'
 import { getLottieStageMotion, LOTTIE_STAGE_SPRING } from '../lib/lottieActions'
 
@@ -455,30 +454,62 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
 
   const clipDuration = Math.max(clipEnd - clipStart, 0.5)
 
-  // Sync to HTML5 <audio>.currentTime via requestAnimationFrame for buttery 60fps responsiveness
+  // Sync to HTML5 <audio>.currentTime via requestAnimationFrame for buttery responsiveness
+  const isLoopingRef = useRef(false)
+  const lastRafTimeRef = useRef(0)
+
   useEffect(() => {
-    if (!isPlaying || !audioElement) return
+    if (!isPlaying || !audioElement) {
+      isLoopingRef.current = false
+      return
+    }
 
     let rafId: number
     const loop = () => {
       if (audioElement && !isNaN(audioElement.currentTime)) {
         const cur = audioElement.currentTime
+
+        // End of cropped clip reached -> loop or stop cleanly without multi-frame seek thrashing
         if (cur >= clipEnd) {
-          if (mode === 'studio') {
-            audioElement.currentTime = clipStart
-            setRafTime(clipStart)
-          } else {
-            audioElement.pause()
-            audioElement.currentTime = clipStart
-            setRafTime(clipStart)
-            if (onTogglePlay) onTogglePlay()
-            return
+          if (!isLoopingRef.current) {
+            isLoopingRef.current = true
+            if (mode === 'studio') {
+              try {
+                audioElement.currentTime = clipStart
+              } catch (e) {
+                console.warn('Seek error during loop:', e)
+              }
+              lastRafTimeRef.current = clipStart
+              setRafTime(clipStart)
+
+              // Wait for seeked event or fallback timer before allowing next loop check
+              const onSeeked = () => {
+                audioElement.removeEventListener('seeked', onSeeked)
+                isLoopingRef.current = false
+              }
+              audioElement.addEventListener('seeked', onSeeked, { once: true })
+              setTimeout(() => {
+                isLoopingRef.current = false
+              }, 250)
+            } else {
+              audioElement.pause()
+              try {
+                audioElement.currentTime = clipStart
+              } catch {}
+              lastRafTimeRef.current = clipStart
+              setRafTime(clipStart)
+              isLoopingRef.current = false
+              if (onTogglePlay) onTogglePlay()
+              return
+            }
           }
-        } else if (cur < clipStart - 0.25) {
-          audioElement.currentTime = clipStart
-          setRafTime(clipStart)
         } else {
-          setRafTime(cur)
+          // Normal playback progression: throttle React state updates to ~25-30fps
+          // to eliminate main-thread congestion and audio buffer underruns
+          if (Math.abs(cur - lastRafTimeRef.current) >= 0.035) {
+            lastRafTimeRef.current = cur
+            setRafTime(cur)
+          }
         }
       }
       rafId = requestAnimationFrame(loop)
@@ -487,6 +518,7 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     rafId = requestAnimationFrame(loop)
     return () => {
       cancelAnimationFrame(rafId)
+      isLoopingRef.current = false
     }
   }, [isPlaying, audioElement, clipStart, clipEnd, mode, onTogglePlay])
 
@@ -520,7 +552,11 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
   // Sound Effects (SFX) trigger once on block entry
   const lastPlayedSFXBlockRef = useRef<number | null>(null)
   useEffect(() => {
-    if (!isPlaying || !activeBlock) return
+    if (!isPlaying) {
+      lastPlayedSFXBlockRef.current = null
+      return
+    }
+    if (!activeBlock) return
     const blockIndex = movesTimeline ? movesTimeline.indexOf(activeBlock) : -1
     if (blockIndex !== -1 && blockIndex !== lastPlayedSFXBlockRef.current) {
       lastPlayedSFXBlockRef.current = blockIndex

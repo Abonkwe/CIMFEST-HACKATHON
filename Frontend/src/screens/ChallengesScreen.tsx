@@ -81,7 +81,7 @@ export const ChallengesScreen: React.FC<ChallengesScreenProps> = ({ onNavigateTa
           <p className="text-xs text-neutral-400">Check back soon for new Cameroonian music contests!</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           {challenges.map((ch) => {
             const song = ch.song
             const isCurrent = currentSong?.id === song?.id

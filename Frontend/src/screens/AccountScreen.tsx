@@ -73,7 +73,7 @@ export const AccountScreen: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-16 animate-fade-in">
+    <div className="space-y-6 pb-24 md:pb-16 animate-fade-in max-w-5xl mx-auto">
       {/* 1. Profile Header Card */}
       <div className="rounded-3xl bg-[#121212] border border-[#536D56]/40 p-6 sm:p-7 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-36 h-36 bg-[#536D56]/15 rounded-full blur-2xl pointer-events-none" />

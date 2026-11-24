@@ -67,7 +67,7 @@ export const AudioPlayerBar: React.FC = () => {
         isClosing ? 'animate-slide-down pointer-events-none' : 'animate-slide-up'
       }`}
     >
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
+      <div className="w-full max-w-[1800px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
         {/* Track Info (with Mobile Close Button) */}
         <div className="flex items-center justify-between md:justify-start gap-3 min-w-0 md:w-1/3">
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">

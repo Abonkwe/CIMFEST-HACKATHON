@@ -206,7 +206,7 @@ export const FeedScreen: React.FC = () => {
           <p className="text-xs text-neutral-400">Be the first to animate a character in Studio!</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 max-w-3xl xl:max-w-4xl mx-auto">
           {feedItems.map((item) => {
             const hasVoted = votedIds.has(item.id)
             const isVotingThis = votingId === item.id

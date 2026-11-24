@@ -52,22 +52,25 @@ const MainShell: React.FC = () => {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#8FA993] text-neutral-100 flex flex-col items-center justify-start p-0 md:p-4">
+    <div className="min-h-screen w-full bg-[#121212] text-neutral-100 flex flex-col antialiased selection:bg-[#F43F5E] selection:text-white">
       {/* 
-        Matte charcoal-black app container (#121212) framed inside soft sage-green (#8FA993) on desktop 
-        Mobile (< 768px): Single-column max-w-[430px]
+        Full-screen responsive container:
+        - Mobile (< 768px): Full width single-column with mobile header & bottom nav
+        - Tablet (768px - 1023px): Full width with sticky left sidebar + wide main workspace
+        - Desktop (>= 1024px): Full-screen width edge-to-edge layout with expansive main workspace
+          (Studio spans full available width; Trending & Challenges feature rich right sidebar on xl:)
       */}
-      <div className="w-full max-w-[430px] md:max-w-7xl min-h-screen md:min-h-[calc(100vh-2rem)] bg-[#121212] md:rounded-3xl shadow-2xl flex flex-col md:flex-row relative border-0 md:border md:border-[#536D56]/50 overflow-hidden">
+      <div className="w-full min-h-screen flex flex-col md:flex-row relative bg-[#121212]">
         {/* Mobile Header (< 768px) */}
         <MobileHeader currentTab={currentTab} onTabChange={handleTabChange} />
 
         {/* Desktop Left Sidebar (md:+) */}
-        <div className="hidden md:block p-4 shrink-0">
+        <div className="hidden md:block shrink-0 sticky top-0 h-screen p-3 lg:p-4 z-30">
           <Sidebar currentTab={currentTab} onTabChange={handleTabChange} />
         </div>
 
         {/* Center Main Workspace */}
-        <main className="flex-1 w-full min-w-0 px-4 md:px-6 py-4 md:py-6 overflow-y-auto max-h-screen md:max-h-[calc(100vh-2rem)]">
+        <main className="flex-1 w-full min-w-0 px-4 sm:px-6 md:px-6 lg:px-8 xl:px-10 py-4 sm:py-6 overflow-y-auto max-h-screen">
           {currentTab === 'trending' && <TrendingScreen onNavigateTab={handleTabChange} />}
           {currentTab === 'challenges' && <ChallengesScreen onNavigateTab={handleTabChange} />}
           {currentTab === 'feed' && <FeedScreen />}
@@ -75,10 +78,12 @@ const MainShell: React.FC = () => {
           {currentTab === 'account' && <AccountScreen />}
         </main>
 
-        {/* Desktop Right Sticky Sidebar (md:+) */}
-        <div className="hidden lg:block p-4 shrink-0">
-          <RightSidebar currentTab={currentTab} onNavigateTab={handleTabChange} />
-        </div>
+        {/* Desktop Right Sticky Sidebar on wide screens (Trending & Challenges & Feed only) */}
+        {currentTab !== 'studio' && currentTab !== 'account' && (
+          <div className="hidden xl:block shrink-0 sticky top-0 h-screen p-3 lg:p-4 z-20">
+            <RightSidebar currentTab={currentTab} onNavigateTab={handleTabChange} />
+          </div>
+        )}
 
         {/* Floating HTML5 Audio Player Bar across all screens */}
         <AudioPlayerBar />
