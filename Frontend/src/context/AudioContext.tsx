@@ -9,6 +9,7 @@ interface AudioContextType {
   hasError: boolean
   playSong: (song: Song) => void
   pauseSong: () => void
+  stopSong: () => void
   togglePlay: () => void
   seek: (seconds: number) => void
 }
@@ -21,6 +22,7 @@ const AudioContext = createContext<AudioContextType>({
   hasError: false,
   playSong: () => {},
   pauseSong: () => {},
+  stopSong: () => {},
   togglePlay: () => {},
   seek: () => {},
 })
@@ -136,6 +138,22 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsPlaying(false)
   }
 
+  const stopSong = () => {
+    if (fallbackIntervalRef.current) {
+      clearInterval(fallbackIntervalRef.current)
+      fallbackIntervalRef.current = null
+    }
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.currentTime = 0
+    }
+    setIsPlaying(false)
+    setCurrentTime(0)
+    setCurrentSong(null)
+    setHasError(false)
+    hasErrorRef.current = false
+  }
+
   const togglePlay = () => {
     if (!currentSong) return
 
@@ -173,6 +191,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         hasError,
         playSong,
         pauseSong,
+        stopSong,
         togglePlay,
         seek,
       }}
