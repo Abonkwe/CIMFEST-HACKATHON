@@ -16,13 +16,12 @@ export function resolveClipUrl(url?: string, songIdOrTitle?: string): string {
   if (
     str.includes('kocee') ||
     str.includes('go na go') ||
-    str.includes('we di go') ||
-    str.includes('we-di-go-na-go')
+    str.includes('we di go')
   ) {
-    return '/assets/audio/we-di-go-na-go.mp3'
+    return '/assets/audio/kocee_we_di_go_na_go.mp3'
   }
 
-  if (!url) return '/assets/audio/we-di-go-na-go.mp3'
+  if (!url) return '/assets/audio/kocee_we_di_go_na_go.mp3'
 
   // If already pointing to a local public asset
   if (url.startsWith('/assets/audio/')) {

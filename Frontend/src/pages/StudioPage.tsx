@@ -3,7 +3,7 @@ import type { Challenge, MoveBlock, StoryProp, StorySFX } from '../types'
 import { fetchActiveChallenges, fetchTrendingSongs, submitCreation } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
-import { MixamoStoryStage } from '../components/MixamoStoryStage'
+import { StagePlayer } from '../components/StagePlayer'
 import {
   STORY_TEMPLATES,
   STORY_ACTIONS,
@@ -427,7 +427,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
         <div className="lg:col-span-6 space-y-4 lg:sticky lg:top-4 z-10">
           {/* Reusable StagePlayer Live Component */}
           <div className="relative rounded-3xl overflow-hidden border border-[#536D56]/60 shadow-2xl bg-black">
-            <MixamoStoryStage
+            <StagePlayer
               characterId={characterA}
               characterAId={characterA}
               characterBId={characterB !== 'none' ? characterB : null}

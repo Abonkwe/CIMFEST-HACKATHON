@@ -16,7 +16,7 @@ export const KOCEE_DEMO_SONG: Song = {
   title: 'We Di Go Na Go',
   genre: 'Afropop / Makossa',
   language: 'Pidgin',
-  clip_url: '/assets/audio/we-di-go-na-go.mp3',
+  clip_url: '/assets/audio/kocee_we_di_go_na_go.mp3',
   duration_sec: 156,
   bpm: 118,
   status: 'trending',

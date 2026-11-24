@@ -88,8 +88,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       hasErrorRef.current = true
       setHasError(true)
       // Attempt playing local verified song asset if external failed
-      if (audio.src && !audio.src.includes('we-di-go-na-go.mp3') && !audio.src.includes('kocee_we_di_go_na_go.mp3') && !audio.src.includes('song1.mp3')) {
-        audio.src = '/assets/audio/we-di-go-na-go.mp3'
+      if (audio.src && !audio.src.includes('kocee_we_di_go_na_go.mp3') && !audio.src.includes('song1.mp3')) {
+        audio.src = '/assets/audio/kocee_we_di_go_na_go.mp3'
         audio.play().catch(() => {})
       }
     }
@@ -177,7 +177,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .catch((err) => {
           console.warn('Audio playback error, falling back to local song asset:', err)
           if (audioRef.current) {
-            audioRef.current.src = '/assets/audio/we-di-go-na-go.mp3'
+            audioRef.current.src = '/assets/audio/kocee_we_di_go_na_go.mp3'
             if (startTime !== undefined) audioRef.current.currentTime = startTime
             audioRef.current
               .play()
