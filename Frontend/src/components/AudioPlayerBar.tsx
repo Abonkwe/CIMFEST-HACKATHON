@@ -1,10 +1,50 @@
-import React from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 
 export const AudioPlayerBar: React.FC = () => {
-  const { currentSong, isPlaying, togglePlay, currentTime, duration, seek } = useAudio()
+  const { currentSong, isPlaying, togglePlay, pauseSong, stopSong, currentTime, duration, seek } = useAudio()
   const { t } = useLanguage()
+
+  const [closingSongId, setClosingSongId] = useState<string | number | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const isClosing = currentSong !== null && closingSongId === currentSong.id
+
+  // Cancel any closing timer if song changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+        closeTimerRef.current = null
+      }
+    }
+  }, [currentSong?.id])
+
+  const handleClose = useCallback(() => {
+    if (!currentSong) return
+    // 1. Immediately pause audio playback
+    pauseSong()
+    // 2. Animate bar collapse
+    setClosingSongId(currentSong.id)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    // 3. Complete stop and reset after collapse animation completes
+    closeTimerRef.current = setTimeout(() => {
+      stopSong()
+      setClosingSongId(null)
+    }, 280)
+  }, [currentSong, pauseSong, stopSong])
+
+  // Close on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && currentSong && !isClosing) {
+        handleClose()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentSong, isClosing, handleClose])
 
   if (!currentSong) return null
 
@@ -22,39 +62,57 @@ export const AudioPlayerBar: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-40 px-3 md:px-6 py-2.5 bg-[#121212]/95 backdrop-blur-md border-t border-[#536D56]/40 shadow-2xl transition-all animate-slide-up">
+    <div
+      className={`fixed bottom-16 md:bottom-0 left-0 right-0 z-40 px-3 md:px-6 py-2.5 bg-[#121212]/95 backdrop-blur-md border-t border-[#536D56]/40 shadow-2xl transition-all ${
+        isClosing ? 'animate-slide-down pointer-events-none' : 'animate-slide-up'
+      }`}
+    >
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-2">
-        {/* Track Info */}
-        <div className="flex items-center gap-3 min-w-0 md:w-1/3">
-          {/* Animated vinyl / disc icon */}
-          <div className="relative shrink-0 w-11 h-11 rounded-xl bg-gradient-to-tr from-[#536D56] to-neutral-800 flex items-center justify-center border border-[#536D56]/60 shadow-inner overflow-hidden">
-            <span
-              className={`text-xl transition-transform duration-1000 ${
-                isPlaying ? 'animate-spin' : ''
-              }`}
-            >
-              🎵
-            </span>
+        {/* Track Info (with Mobile Close Button) */}
+        <div className="flex items-center justify-between md:justify-start gap-3 min-w-0 md:w-1/3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1">
+            {/* Animated vinyl / disc icon */}
+            <div className="relative shrink-0 w-10 h-10 md:w-11 md:h-11 rounded-xl bg-gradient-to-tr from-[#536D56] to-neutral-800 flex items-center justify-center border border-[#536D56]/60 shadow-inner overflow-hidden">
+              <span
+                className={`text-xl transition-transform duration-1000 ${
+                  isPlaying ? 'animate-spin' : ''
+                }`}
+              >
+                🎵
+              </span>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="text-xs md:text-sm font-bold text-white truncate">
+                  {currentSong.title}
+                </span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#536D56]/40 text-[#8FA993] border border-[#536D56]/50 shrink-0">
+                  {currentSong.genre}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 text-[11px] text-neutral-400 truncate">
+                <span>{currentSong.artist_name || 'Verified Artist'}</span>
+                <span className="text-[#FACC15] shrink-0" title={t('verifiedBadge')}>
+                  ✓
+                </span>
+                <span className="text-neutral-500">·</span>
+                <span className="font-mono text-neutral-400">{currentSong.bpm} BPM</span>
+              </div>
+            </div>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-xs md:text-sm font-bold text-white truncate">
-                {currentSong.title}
-              </span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#536D56]/40 text-[#8FA993] border border-[#536D56]/50 shrink-0">
-                {currentSong.genre}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-[11px] text-neutral-400 truncate">
-              <span>{currentSong.artist_name || 'Verified Artist'}</span>
-              <span className="text-[#FACC15] shrink-0" title={t('verifiedBadge')}>
-                ✓
-              </span>
-              <span className="text-neutral-500">·</span>
-              <span className="font-mono text-neutral-400">{currentSong.bpm} BPM</span>
-            </div>
-          </div>
+          {/* Close button for Mobile (< md) */}
+          <button
+            onClick={handleClose}
+            className="md:hidden shrink-0 w-8 h-8 rounded-full bg-neutral-800/80 hover:bg-[#F43F5E]/20 text-neutral-400 hover:text-[#F43F5E] flex items-center justify-center transition border border-neutral-700/60 hover:border-[#F43F5E]/50 active:scale-95 cursor-pointer shadow-sm"
+            title={t('closePlayer')}
+            aria-label={t('closePlayer')}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         {/* Center Controls & Scrubber */}
@@ -100,18 +158,27 @@ export const AudioPlayerBar: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Badges */}
-        <div className="hidden md:flex items-center justify-end gap-2 md:w-1/3 text-xs text-neutral-400">
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-300">
+        {/* Right Badges & Desktop Close Button (>= md) */}
+        <div className="hidden md:flex items-center justify-end gap-2.5 md:w-1/3 text-xs text-neutral-400">
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-300 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>237 Sound</span>
           </span>
-          <span className="text-[11px] text-neutral-400 bg-[#536D56]/20 border border-[#536D56]/40 px-2 py-0.5 rounded-full font-mono">
+          <span className="text-[11px] text-neutral-400 bg-[#536D56]/20 border border-[#536D56]/40 px-2 py-0.5 rounded-full font-mono shrink-0">
             {currentSong.language}
           </span>
+          <button
+            onClick={handleClose}
+            className="shrink-0 w-8 h-8 rounded-full bg-neutral-800/80 hover:bg-[#F43F5E]/20 text-neutral-400 hover:text-[#F43F5E] flex items-center justify-center transition border border-neutral-700/60 hover:border-[#F43F5E]/50 active:scale-95 cursor-pointer shadow-sm"
+            title={t('closePlayer')}
+            aria-label={t('closePlayer')}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
   )
 }
-
