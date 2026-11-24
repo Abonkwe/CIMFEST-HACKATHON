@@ -86,6 +86,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Audio Bar
     nowPlaying: 'Now Playing',
     selectSongToPlay: 'Select a song to listen',
+    closePlayer: 'Close player',
 
     // Modals
     loginModalTitle: 'Enter BeatToons Cameroon',
@@ -181,6 +182,7 @@ const translations: Record<Language, Record<string, string>> = {
     // Audio Bar
     nowPlaying: 'En Lecture',
     selectSongToPlay: 'Sélectionnez un morceau pour écouter',
+    closePlayer: 'Fermer le lecteur',
 
     // Modals
     loginModalTitle: 'Accéder à BeatToons Cameroun',
