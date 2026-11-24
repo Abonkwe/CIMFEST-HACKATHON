@@ -28,7 +28,7 @@ export interface StagePlayerProps {
 }
 
 // Normalize character ID to match asset names
-export function normalizeCharacterId(rawId?: string): 'tantie' | 'mboa_boy' | 'pa_buea' {
+function normalizeCharacterId(rawId?: string): 'tantie' | 'mboa_boy' | 'pa_buea' {
   if (!rawId) return 'tantie'
   const lower = rawId.toLowerCase().trim()
   if (lower.includes('tantie') || lower.includes('girl') || lower.includes('mama')) {
@@ -544,8 +544,42 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
   audioElement = null,
 }) => {
   const normChar = normalizeCharacterId(characterId)
-  const [extImageFailed, setExtImageFailed] = useState(false)
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [rafTime, setRafTime] = useState(0)
+
+  // Auto-fading reaction sticker state (Issue 1: 1.5s auto-fade)
+  const [visibleSticker, setVisibleSticker] = useState<string | null>(sticker || null)
+  const [stickerFading, setStickerFading] = useState(false)
+
+  useEffect(() => {
+    let fadeTimer: ReturnType<typeof setTimeout>
+    let hideTimer: ReturnType<typeof setTimeout>
+
+    const startTimer = setTimeout(() => {
+      if (sticker) {
+        setVisibleSticker(sticker)
+        setStickerFading(false)
+
+        fadeTimer = setTimeout(() => {
+          setStickerFading(true)
+        }, 1100)
+
+        hideTimer = setTimeout(() => {
+          setVisibleSticker(null)
+          setStickerFading(false)
+        }, 1500)
+      } else {
+        setVisibleSticker(null)
+        setStickerFading(false)
+      }
+    }, 0)
+
+    return () => {
+      clearTimeout(startTimer)
+      if (fadeTimer) clearTimeout(fadeTimer)
+      if (hideTimer) clearTimeout(hideTimer)
+    }
+  }, [sticker])
 
   // Sync to HTML5 <audio>.currentTime via requestAnimationFrame for buttery 60fps responsiveness
   useEffect(() => {
@@ -568,9 +602,10 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
   // Effective time used for rhythm & moves
   const effectiveTime = isPlaying && audioElement ? rafTime : currentTime
 
-  // Calculate rhythm sync (FR-20, FR-21)
-  // Half-beat alternates pose A and pose B
-  const halfBeatDuration = useMemo(() => 30 / Math.max(bpm || 110, 40), [bpm])
+  // Continuous BPM duration (FR-20, FR-21, Issue 2)
+  const safeBpm = Math.max(bpm || 110, 40)
+  const beatDuration = useMemo(() => 60 / safeBpm, [safeBpm])
+  const halfBeatDuration = useMemo(() => 30 / safeBpm, [safeBpm])
   const halfBeatIndex = Math.floor(effectiveTime / halfBeatDuration)
   const isPoseB = isPlaying ? halfBeatIndex % 2 === 1 : false
 
@@ -582,47 +617,6 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     )
     return (found?.action || 'sway').toLowerCase()
   }, [movesTimeline, effectiveTime])
-
-  // Snappy CSS Transforms for the 4 moves: sway, stomp, jump, flex
-  const characterTransform = useMemo(() => {
-    if (!isPlaying) {
-      return 'translateY(0px) rotate(0deg) scale(1)'
-    }
-
-    switch (activeMove) {
-      case 'sway':
-        // Alternates hip/body tilt left and right with snappy groove
-        return isPoseB
-          ? 'rotate(6deg) translateX(14px) translateY(-3px) scale(1)'
-          : 'rotate(-6deg) translateX(-14px) translateY(-3px) scale(1)'
-
-      case 'stomp':
-        // Downward impact squish on beat, spring back up on half-beat
-        return isPoseB
-          ? 'translateY(-10px) scale(0.97, 1.05) rotate(3deg)'
-          : 'translateY(12px) scale(1.07, 0.92) rotate(-2deg)'
-
-      case 'jump':
-        // Dynamic hop in the air with squash & stretch
-        return isPoseB
-          ? 'translateY(-30px) scale(0.94, 1.08) rotate(2deg)'
-          : 'translateY(6px) scale(1.05, 0.94) rotate(-1deg)'
-
-      case 'flex':
-        // Swagger muscle pump with chest expansion
-        return isPoseB
-          ? 'scale(1.15) translateY(-8px) rotate(3deg)'
-          : 'scale(1.08) translateY(-3px) rotate(-3deg)'
-
-      default:
-        return isPoseB
-          ? 'rotate(4deg) translateY(-4px)'
-          : 'rotate(-4deg) translateY(0px)'
-    }
-  }, [isPlaying, activeMove, isPoseB])
-
-  const poseFileName = `${normChar}_pose_${isPoseB ? 'b' : 'a'}.svg`
-  const extSvgPath = `/assets/characters/${poseFileName}`
 
   // Render Background Theme
   const renderBackground = () => {
@@ -651,11 +645,91 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     <div
       className={`relative w-full ${aspectRatio} rounded-3xl overflow-hidden shadow-2xl border border-white/10 select-none group ${className}`}
     >
+      {/* 0. Scoped 2D Music Video Keyframe Animations (Issue 2) */}
+      <style>{`
+        .stage-dance-sway {
+          animation: stage-sway calc(var(--beat-duration, 0.54s) * 2) ease-in-out infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes stage-sway {
+          0%, 100% {
+            transform: rotate(-6deg) translateY(0px);
+          }
+          50% {
+            transform: rotate(6deg) translateY(-6px);
+          }
+        }
+
+        .stage-dance-stomp {
+          animation: stage-stomp var(--beat-duration, 0.54s) cubic-bezier(0.25, 1, 0.5, 1) infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes stage-stomp {
+          0%, 100% {
+            transform: translateY(0px) scale(1, 1);
+          }
+          30% {
+            transform: translateY(-14px) scale(0.98, 1.04);
+          }
+          60% {
+            transform: translateY(2px) scale(1.05, 0.95);
+          }
+          80% {
+            transform: translateY(0px) scale(1, 1);
+          }
+        }
+
+        .stage-dance-jump {
+          animation: stage-jump var(--beat-duration, 0.54s) cubic-bezier(0.22, 1, 0.36, 1) infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes stage-jump {
+          0%, 100% {
+            transform: translateY(0px) scale(1, 1);
+          }
+          15% {
+            transform: translateY(3px) scale(1.04, 0.94);
+          }
+          50% {
+            transform: translateY(-26px) scale(0.96, 1.04);
+          }
+          75% {
+            transform: translateY(2px) scale(1.05, 0.95);
+          }
+        }
+
+        .stage-dance-flex {
+          animation: stage-flex calc(var(--beat-duration, 0.54s) * 2) ease-in-out infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes stage-flex {
+          0%, 100% {
+            transform: translateX(-6px) rotate(-4deg);
+          }
+          50% {
+            transform: translateX(6px) rotate(4deg);
+          }
+        }
+
+        .stage-dance-idle {
+          animation: stage-idle 2.4s ease-in-out infinite;
+          transform-origin: bottom center;
+        }
+        @keyframes stage-idle {
+          0%, 100% {
+            transform: translateY(0px);
+          }
+          50% {
+            transform: translateY(-3px);
+          }
+        }
+      `}</style>
+
       {/* 1. Theme Stage Background (Pure CSS + SVG, NFR-2) */}
       {renderBackground()}
 
-      {/* 2. Top Bar Details & Live Beat Badge */}
-      <div className="absolute top-3 left-3 right-3 z-30 flex items-center justify-between pointer-events-none">
+      {/* 2. Top-Left Bar Details: Character, BPM & Move Pill (Issue 1) */}
+      <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 pointer-events-none">
         <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] font-semibold text-white border border-white/10 shadow">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="capitalize">{normChar.replace('_', ' ')}</span>
@@ -672,51 +746,83 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
         )}
       </div>
 
-      {/* 3. Comic Speech Bubble & Reaction Stickers (FR-23) */}
-      <div className="absolute top-10 sm:top-12 left-0 right-0 z-30 flex flex-col items-center pointer-events-none px-4">
-        {/* Comic Speech Bubble */}
-        {caption && caption.trim().length > 0 && (
-          <div className="relative max-w-[85%] sm:max-w-xs animate-comic-pop">
-            <div className="bg-white text-neutral-950 font-black text-xs sm:text-sm px-4 py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-center tracking-tight leading-tight">
-              "{caption}"
-            </div>
-            {/* Comic Speech Bubble Beak / Tail */}
-            <div className="w-0 h-0 border-l-[7px] border-l-transparent border-r-[7px] border-r-transparent border-t-[10px] border-t-neutral-950 mx-auto -mt-[1px]" />
-            <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[8px] border-t-white mx-auto -mt-[10px]" />
+      {/* 3. Comic Speech Bubble / Caption: Pinned to Top-Right Corner (Issue 1, FR-23) */}
+      {caption && caption.trim().length > 0 && (
+        <div className="absolute top-3 right-3 max-w-[42%] z-20 flex flex-col items-end pointer-events-none animate-comic-pop">
+          <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-right tracking-tight leading-snug">
+            "{caption}"
+            {/* Comic Speech Bubble Tail pointing down-left toward center character */}
+            <svg
+              className="absolute -bottom-2.5 left-2.5 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none"
+              viewBox="0 0 16 14"
+              fill="currentColor"
+            >
+              <path d="M0 0 L16 0 L4 14 Z" />
+            </svg>
+            <svg
+              className="absolute -bottom-2 left-3 w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none"
+              viewBox="0 0 14 12"
+              fill="currentColor"
+            >
+              <path d="M0 0 L14 0 L3 12 Z" />
+            </svg>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Quick Reaction Sticker Popup */}
-        {sticker && (
-          <div
-            onClick={() => onStickerTap && onStickerTap(sticker)}
-            className="mt-1 animate-comic-pop pointer-events-auto cursor-pointer"
-          >
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FACC15] text-neutral-950 font-black text-xs border-[2px] border-neutral-950 shadow-[3px_3px_0px_#000] rotate-[-3deg] hover:scale-105 active:scale-95 transition-transform">
-              <span>🔥</span>
-              <span>{sticker}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 4. 2-Pose Character Stage Arena */}
-      <div className="absolute inset-0 z-20 flex items-end justify-center pb-5 sm:pb-8 pointer-events-none">
+      {/* 4. Reaction Stickers (Issue 1): Bottom-Left with 1.5s Auto-Fade */}
+      {visibleSticker && (
         <div
-          className="relative w-44 sm:w-56 md:w-64 aspect-[3/4] flex items-center justify-center transition-transform duration-100 ease-out"
+          onClick={() => onStickerTap && onStickerTap(visibleSticker)}
+          className={`absolute bottom-3 left-3 z-30 transition-all duration-300 ease-out pointer-events-auto cursor-pointer ${
+            stickerFading
+              ? 'opacity-0 scale-90 translate-y-2'
+              : 'opacity-100 scale-100 animate-comic-pop'
+          }`}
+        >
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FACC15] text-neutral-950 font-black text-xs sm:text-sm border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] rotate-[-3deg] hover:scale-105 active:scale-95 transition-transform">
+            <span className="text-sm">🔥</span>
+            <span>{visibleSticker}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 5. 2-Pose Character Stage Arena: Anchored cleanly in center-bottom (z-10, pt-10, Issue 1 & 2) */}
+      <div className="absolute inset-0 z-10 flex items-end justify-center pt-10 pb-4 sm:pb-6 pointer-events-none">
+        <div
+          className={`relative h-full max-h-[84%] max-w-[280px] aspect-[1179/3291] flex items-end justify-center ${
+            isPlaying ? `stage-dance-${activeMove}` : 'stage-dance-idle'
+          }`}
           style={{
-            transform: characterTransform,
             transformOrigin: 'bottom center',
+            transition: 'transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+            // Custom CSS properties driving smooth BPM keyframes
+            ['--beat-duration' as any]: `${beatDuration}s`,
+            ['--bpm' as any]: `${bpm}`,
           }}
         >
-          {/* External SVG with Inline SVG Fallback */}
-          {!extImageFailed ? (
-            <img
-              src={extSvgPath}
-              alt={`${normChar} dancing`}
-              onError={() => setExtImageFailed(true)}
-              className="w-full h-full object-contain filter drop-shadow-[0_12px_14px_rgba(0,0,0,0.7)]"
-            />
+          {/* Persistent Character Container (Issue 2: Zero remounting/reloading) */}
+          {!failedImages[normChar] ? (
+            <div className="relative w-full h-full flex items-end justify-center overflow-visible">
+              {/* Persistent Pose A */}
+              <img
+                src={`/assets/characters/${normChar}_pose_a.svg`}
+                alt={`${normChar} pose A`}
+                onError={() => setFailedImages((prev) => ({ ...prev, [normChar]: true }))}
+                className={`w-full h-full object-contain object-bottom filter drop-shadow-[0_12px_14px_rgba(0,0,0,0.7)] transition-opacity duration-150 ease-in-out ${
+                  isPoseB ? 'opacity-0 pointer-events-none absolute inset-0' : 'opacity-100 relative'
+                }`}
+              />
+              {/* Persistent Pose B */}
+              <img
+                src={`/assets/characters/${normChar}_pose_b.svg`}
+                alt={`${normChar} pose B`}
+                onError={() => setFailedImages((prev) => ({ ...prev, [normChar]: true }))}
+                className={`w-full h-full object-contain object-bottom filter drop-shadow-[0_12px_14px_rgba(0,0,0,0.7)] transition-opacity duration-150 ease-in-out ${
+                  isPoseB ? 'opacity-100 relative' : 'opacity-0 pointer-events-none absolute inset-0'
+                }`}
+              />
+            </div>
           ) : (
             <InlineCharacterSVG character={normChar} isPoseB={isPoseB} />
           )}
@@ -724,7 +830,7 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           {/* Jump / Air Shadow effect */}
           {activeMove === 'jump' && isPlaying && (
             <div
-              className={`absolute -bottom-2 w-32 h-4 rounded-full bg-black/40 blur-sm transition-all duration-100 ${
+              className={`absolute -bottom-2 w-28 h-3.5 rounded-full bg-black/40 blur-sm transition-all duration-100 ${
                 isPoseB ? 'scale-75 opacity-25' : 'scale-105 opacity-50'
               }`}
             />
@@ -732,7 +838,7 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
         </div>
       </div>
 
-      {/* 5. Playback Mode Click Overlay for Feed / Previews */}
+      {/* 6. Playback Mode Click Overlay for Feed / Previews */}
       {mode === 'playback' && !isPlaying && (
         <div
           onClick={onTogglePlay}

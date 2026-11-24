@@ -119,9 +119,33 @@ const CAMEROON_PHRASES = [
   'Waka fine, level don change! 🚀',
 ]
 
+// Circular Character Avatar rendering Open Peeps SVG with fallback
+const CharacterAvatarCircle: React.FC<{
+  characterId: string
+  displayName: string
+  fallbackEmoji: string
+}> = ({ characterId, displayName, fallbackEmoji }) => {
+  const [hasError, setHasError] = useState(false)
+
+  if (hasError) {
+    return <span className="text-2xl sm:text-3xl select-none">{fallbackEmoji}</span>
+  }
+
+  return (
+    <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-neutral-700/50 to-neutral-800 flex items-center justify-center">
+      <img
+        src={`/assets/characters/${characterId}_pose_a.svg`}
+        alt={displayName}
+        onError={() => setHasError(true)}
+        className="w-full h-full object-cover object-top scale-[1.75] translate-y-3 sm:translate-y-3.5 pointer-events-none select-none"
+      />
+    </div>
+  )
+}
+
 export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   const { user, token, openLoginModal } = useAuth()
-  const { playSong, pauseSong, seek, currentTime, isPlaying, currentSong } = useAudio()
+  const { playSong, pauseSong, seek, currentTime, isPlaying, currentSong, audioElement } = useAudio()
 
   // Challenges and songs
   const [challenges, setChallenges] = useState<Challenge[]>([])
@@ -160,12 +184,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
   // Scrubber container ref for smooth seeking
   const scrubberRef = useRef<HTMLInputElement>(null)
-  const playSongRef = useRef(playSong)
-  useEffect(() => {
-    playSongRef.current = playSong
-  })
 
-  // Load active challenges & songs
+  // Load active challenges & songs (without forcing auto-play on mount to respect browser autoplay policies)
   useEffect(() => {
     let mounted = true
     const initStudio = async () => {
@@ -195,7 +215,6 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
         if (initialCh) {
           setSelectedChallenge(initialCh)
           if (initialCh.song) {
-            playSongRef.current(initialCh.song)
             const dur = initialCh.song.duration_sec || 24
             const blockDuration = dur / 8
             setTimelineBlocks((prev) =>
@@ -379,6 +398,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
               onStickerTap={(st) => setActiveSticker(st)}
               aspectRatio="aspect-[16/11] sm:aspect-[16/10]"
               mode="studio"
+              audioElement={audioElement}
+              onTogglePlay={handleTogglePlay}
             />
           </div>
 
@@ -568,13 +589,17 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
                     {/* Circular Avatar */}
                     <div
-                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full flex items-center justify-center text-2xl sm:text-3xl mb-2 transition-transform ${
+                      className={`w-14 h-14 sm:w-16 sm:h-16 rounded-full overflow-hidden flex items-center justify-center mb-2 transition-transform ${
                         isSelected
                           ? 'ring-4 ring-[#F43F5E] bg-neutral-800 scale-105'
                           : 'bg-neutral-800/80 ring-1 ring-neutral-700'
                       }`}
                     >
-                      {char.avatar}
+                      <CharacterAvatarCircle
+                        characterId={char.id}
+                        displayName={char.displayName}
+                        fallbackEmoji={char.avatar}
+                      />
                     </div>
 
                     <span className="text-xs font-black text-white leading-tight">
@@ -756,7 +781,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                   key={stk.label}
                   type="button"
                   onClick={() => {
-                    setActiveSticker(stk.label)
+                    setActiveSticker(null)
+                    setTimeout(() => setActiveSticker(stk.label), 20)
                     setCaption(stk.label)
                   }}
                   className={`px-3 py-1.5 rounded-full text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${

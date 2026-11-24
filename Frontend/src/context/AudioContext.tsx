@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react'
 import type { Song } from '../types'
+import { resolveClipUrl, AfrobeatsSynthEngine } from '../lib/audioUtils'
 
 interface AudioContextType {
   currentSong: Song | null
@@ -7,6 +8,7 @@ interface AudioContextType {
   currentTime: number
   duration: number
   hasError: boolean
+  audioElement: HTMLAudioElement | null
   playSong: (song: Song) => void
   pauseSong: () => void
   togglePlay: () => void
@@ -19,6 +21,7 @@ const AudioContext = createContext<AudioContextType>({
   currentTime: 0,
   duration: 20,
   hasError: false,
+  audioElement: null,
   playSong: () => {},
   pauseSong: () => {},
   togglePlay: () => {},
@@ -31,19 +34,35 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(20)
   const [hasError, setHasError] = useState(false)
-  const hasErrorRef = useRef(false)
 
-  const audioRef = useRef<HTMLAudioElement | null>(null)
+  // Single persistent HTML5 Audio instance initialized once without cascading effect renders
+  const [audio] = useState<HTMLAudioElement | null>(() => {
+    if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
+      const a = new Audio()
+      a.preload = 'auto'
+      return a
+    }
+    return null
+  })
+
+  const hasErrorRef = useRef(false)
+  const audioRef = useRef<HTMLAudioElement | null>(audio)
+  const synthEngineRef = useRef<AfrobeatsSynthEngine | null>(null)
   const fallbackIntervalRef = useRef<any>(null)
+  const currentSongRef = useRef<Song | null>(null)
 
   useEffect(() => {
-    // Instantiate shared HTML5 audio instance
-    const audio = new Audio()
-    audio.preload = 'auto'
-    audioRef.current = audio
+    currentSongRef.current = currentSong
+  }, [currentSong])
+
+  useEffect(() => {
+    if (!audio) return
+
+    // Instantiate procedural Web Audio synth safety net
+    synthEngineRef.current = new AfrobeatsSynthEngine()
 
     const onTimeUpdate = () => {
-      if (!hasErrorRef.current && audio.currentTime) {
+      if (!hasErrorRef.current && audio.currentTime !== undefined) {
         setCurrentTime(audio.currentTime)
         if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
           setDuration(audio.duration)
@@ -54,12 +73,17 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const onEnded = () => {
       setIsPlaying(false)
       setCurrentTime(0)
+      synthEngineRef.current?.stop()
     }
 
     const onError = () => {
-      console.warn('Audio element error, falling back to simulated playback progression')
+      console.warn('Audio element error or source unavailable. Engaging Web Audio API Afrobeats synthesizer safety net.')
       hasErrorRef.current = true
       setHasError(true)
+      // If was meant to be playing, engage the procedural synth loop
+      if (audioRef.current && !audioRef.current.paused) {
+        synthEngineRef.current?.start(currentSongRef.current?.bpm || 115)
+      }
     }
 
     audio.addEventListener('timeupdate', onTimeUpdate)
@@ -72,21 +96,24 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audio.removeEventListener('error', onError)
       audio.pause()
       audio.src = ''
+      synthEngineRef.current?.stop()
     }
-  }, [])
+  }, [audio])
 
-  // Simulated timer fallback if external MP3 URL cannot be reached
+  // Procedural timer progression when Web Audio fallback is active (demo safety net)
   useEffect(() => {
     if (isPlaying && hasError) {
+      const stepMs = 50
       fallbackIntervalRef.current = setInterval(() => {
         setCurrentTime((prev) => {
-          if (prev >= duration) {
-            setIsPlaying(false)
+          const next = prev + stepMs / 1000
+          if (next >= duration) {
+            // Loop smoothly for demo
             return 0
           }
-          return Math.min(prev + 0.25, duration)
+          return next
         })
-      }, 250)
+      }, stepMs)
     } else {
       if (fallbackIntervalRef.current) {
         clearInterval(fallbackIntervalRef.current)
@@ -98,41 +125,54 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [isPlaying, hasError, duration])
 
+  // Play song - synchronous audioRef.current.play() inside caller's click handler
   const playSong = (song: Song) => {
     if (!audioRef.current) return
 
+    // If already playing this song, do nothing
     if (currentSong?.id === song.id && isPlaying) {
       return
     }
 
-    setCurrentSong(song)
+    const resolvedUrl = resolveClipUrl(song.clip_url, `${song.id} ${song.title} ${song.genre}`)
+    const targetSong: Song = { ...song, clip_url: resolvedUrl }
+
+    setCurrentSong(targetSong)
     setCurrentTime(0)
-    setDuration(song.duration_sec || 20)
+    setDuration(song.duration_sec || 24)
     hasErrorRef.current = false
     setHasError(false)
 
-    audioRef.current.src = song.clip_url
+    // Stop synth if it was running
+    synthEngineRef.current?.stop()
+
+    // Assign source & immediately trigger play directly inside user click handler
+    audioRef.current.src = resolvedUrl
     audioRef.current.currentTime = 0
 
-    audioRef.current
-      .play()
-      .then(() => {
-        setIsPlaying(true)
-        hasErrorRef.current = false
-        setHasError(false)
-      })
-      .catch((err) => {
-        console.warn('Audio play prevented or URL error, starting simulated progression:', err)
-        hasErrorRef.current = true
-        setHasError(true)
-        setIsPlaying(true)
-      })
+    const playPromise = audioRef.current.play()
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true)
+          hasErrorRef.current = false
+          setHasError(false)
+        })
+        .catch((err) => {
+          console.warn('Audio playback error, auto-starting Web Audio Afrobeats synth:', err)
+          hasErrorRef.current = true
+          setHasError(true)
+          setIsPlaying(true)
+          synthEngineRef.current?.start(song.bpm || 115)
+        })
+    }
   }
 
   const pauseSong = () => {
     if (audioRef.current) {
       audioRef.current.pause()
     }
+    synthEngineRef.current?.stop()
     setIsPlaying(false)
   }
 
@@ -147,19 +187,26 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           .play()
           .then(() => setIsPlaying(true))
           .catch(() => {
+            hasErrorRef.current = true
             setHasError(true)
             setIsPlaying(true)
+            synthEngineRef.current?.start(currentSong.bpm || 115)
           })
       } else {
         setIsPlaying(true)
+        synthEngineRef.current?.start(currentSong.bpm || 115)
       }
     }
   }
 
   const seek = (seconds: number) => {
     setCurrentTime(seconds)
-    if (audioRef.current && !hasError) {
-      audioRef.current.currentTime = seconds
+    if (audioRef.current && !hasErrorRef.current) {
+      try {
+        audioRef.current.currentTime = seconds
+      } catch {
+        // ignore seek boundary error
+      }
     }
   }
 
@@ -171,6 +218,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         currentTime,
         duration,
         hasError,
+        audioElement: audio,
         playSong,
         pauseSong,
         togglePlay,

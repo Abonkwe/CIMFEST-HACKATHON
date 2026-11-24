@@ -15,7 +15,7 @@ import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
 
 export const FeedScreen: React.FC = () => {
   const { user, token, openLoginModal } = useAuth()
-  const { playSong, pauseSong, isPlaying, currentTime } = useAudio()
+  const { playSong, pauseSong, isPlaying, currentTime, audioElement } = useAudio()
   const { t } = useLanguage()
 
   const [feedItems, setFeedItems] = useState<Creation[]>([])
@@ -138,20 +138,19 @@ export const FeedScreen: React.FC = () => {
     }
 
     setActiveCreationId(creation.id)
-    if (creation.song?.clip_url) {
-      playSong({
-        id: creation.song.id || creation.id,
-        artist_id: creation.creator_id,
-        title: creation.song.title,
-        genre: creation.song.genre,
-        language: 'Cameroon',
-        clip_url: creation.song.clip_url,
-        duration_sec: 24,
-        bpm: creation.song.bpm || 115,
-        status: 'trending',
-        trending_score: 95,
-      })
-    }
+    const clipUrl = creation.song?.clip_url || '/assets/audio/song1.mp3'
+    playSong({
+      id: creation.song?.id || creation.id,
+      artist_id: creation.creator_id,
+      title: creation.song?.title || 'Makossa Beat',
+      genre: creation.song?.genre || 'Makossa',
+      language: 'Cameroon',
+      clip_url: clipUrl,
+      duration_sec: 24,
+      bpm: creation.song?.bpm || 115,
+      status: 'trending',
+      trending_score: 95,
+    })
 
     try {
       const res = await recordCreationView(creation.id)
@@ -279,12 +278,13 @@ export const FeedScreen: React.FC = () => {
                         isPlaying={isThisItemPlaying}
                         caption={item.caption}
                         mode="playback"
+                        audioElement={isThisItemPlaying ? audioElement : null}
                         onTogglePlay={() => handlePlayPreview(item)}
                         aspectRatio="aspect-[16/10] sm:aspect-[16/9]"
                       />
 
                       {/* Track label badge on preview */}
-                      <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] text-white border border-white/10 pointer-events-none">
+                      <div className="absolute bottom-2.5 left-3 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] text-white border border-white/10 pointer-events-none">
                         <span>🎵</span>
                         <span className="font-semibold truncate max-w-[180px]">
                           {item.song?.title || 'Douala Makossa'}
