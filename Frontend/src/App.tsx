@@ -13,7 +13,7 @@ import { TrendingScreen } from './screens/TrendingScreen'
 import { ChallengesScreen } from './screens/ChallengesScreen'
 import { FeedScreen } from './screens/FeedScreen'
 import { AccountScreen } from './screens/AccountScreen'
-import { StudioPlaceholderScreen } from './screens/StudioPlaceholderScreen'
+import { StudioPage } from './pages/StudioPage'
 
 function resolveInitialTab(): string {
   if (typeof window !== 'undefined') {
@@ -71,7 +71,7 @@ const MainShell: React.FC = () => {
           {currentTab === 'trending' && <TrendingScreen onNavigateTab={handleTabChange} />}
           {currentTab === 'challenges' && <ChallengesScreen onNavigateTab={handleTabChange} />}
           {currentTab === 'feed' && <FeedScreen />}
-          {currentTab === 'studio' && <StudioPlaceholderScreen onNavigateTab={handleTabChange} />}
+          {currentTab === 'studio' && <StudioPage onNavigateTab={handleTabChange} />}
           {currentTab === 'account' && <AccountScreen />}
         </main>
 
