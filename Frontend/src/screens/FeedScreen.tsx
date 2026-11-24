@@ -11,13 +11,15 @@ import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 import { ReportModal } from '../components/ReportModal'
+import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
 
 export const FeedScreen: React.FC = () => {
   const { user, token, openLoginModal } = useAuth()
-  const { playSong } = useAudio()
+  const { playSong, pauseSong, isPlaying, currentTime } = useAudio()
   const { t } = useLanguage()
 
   const [feedItems, setFeedItems] = useState<Creation[]>([])
+  const [activeCreationId, setActiveCreationId] = useState<string | null>(null)
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null)
   const [mobileLeaderboardTab, setMobileLeaderboardTab] = useState<'top' | 'rising'>('top')
   const [mobileRankings, setMobileRankings] = useState<Creation[]>([])
@@ -130,6 +132,12 @@ export const FeedScreen: React.FC = () => {
 
   // Handle Play Stage Preview & increment views (POST /creations/{id}/view, FR-29)
   const handlePlayPreview = async (creation: Creation) => {
+    if (activeCreationId === creation.id && isPlaying) {
+      pauseSong()
+      return
+    }
+
+    setActiveCreationId(creation.id)
     if (creation.song?.clip_url) {
       playSong({
         id: creation.song.id || creation.id,
@@ -253,57 +261,51 @@ export const FeedScreen: React.FC = () => {
                   </p>
                 )}
 
-                {/* Static Stage Preview (Character Animation Preview, FR-24) */}
-                <div
-                  onClick={() => handlePlayPreview(item)}
-                  className="relative w-full aspect-[16/10] sm:aspect-[16/9] rounded-2xl bg-gradient-to-b from-[#1a2e20] to-[#0d160f] border border-[#536D56]/50 overflow-hidden flex flex-col items-center justify-center p-4 cursor-pointer group shadow-inner"
-                >
-                  {/* Spotlight Background effect */}
-                  <div className="absolute top-0 w-48 h-48 bg-[#8FA993]/20 rounded-full blur-3xl pointer-events-none" />
-                  <div className="absolute bottom-0 w-full h-8 bg-black/40 border-t border-[#536D56]/30" />
+                {/* Reusable Animated StagePlayer in Playback Mode (FR-24) */}
+                {(() => {
+                  const isThisItemPlaying = activeCreationId === item.id && isPlaying
+                  const creationBpm = item.song?.bpm || 115
+                  const themes: BackgroundTheme[] = ['sage_starburst', 'amber_sunset', 'slate_night', 'lavender_haze']
+                  const bgTheme = themes[feedItems.indexOf(item) % themes.length]
 
-                  {/* Character Illustration / Stage Representation */}
-                  <div className="relative z-10 flex flex-col items-center group-hover:scale-105 transition-transform duration-200">
-                    <div className="text-6xl sm:text-7xl filter drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)]">
-                      {characterName.toLowerCase().includes('girl') ? '💃' : characterName.toLowerCase().includes('boy') ? '🕺' : '🎉'}
+                  return (
+                    <div className="relative w-full rounded-2xl overflow-hidden border border-[#536D56]/50 shadow-inner">
+                      <StagePlayer
+                        characterId={item.character_id || item.character || 'tantie'}
+                        backgroundTheme={bgTheme}
+                        movesTimeline={item.moves_timeline || []}
+                        bpm={creationBpm}
+                        currentTime={isThisItemPlaying ? currentTime : 0}
+                        isPlaying={isThisItemPlaying}
+                        caption={item.caption}
+                        mode="playback"
+                        onTogglePlay={() => handlePlayPreview(item)}
+                        aspectRatio="aspect-[16/10] sm:aspect-[16/9]"
+                      />
+
+                      {/* Track label badge on preview */}
+                      <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] text-white border border-white/10 pointer-events-none">
+                        <span>🎵</span>
+                        <span className="font-semibold truncate max-w-[180px]">
+                          {item.song?.title || 'Douala Makossa'}
+                        </span>
+                        <span className="text-[#FACC15] font-mono text-[10px]">({creationBpm} BPM)</span>
+                      </div>
+
+                      {/* Moves timeline pills */}
+                      <div className="absolute bottom-2.5 right-3 z-30 hidden sm:flex items-center gap-1 pointer-events-none">
+                        {item.moves_timeline?.map((m, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-[#8FA993] border border-[#536D56]/30 uppercase"
+                          >
+                            {m.action}
+                          </span>
+                        ))}
+                      </div>
                     </div>
-
-                    <div className="mt-2 text-center">
-                      <span className="text-xs font-bold text-white bg-black/50 px-3 py-1 rounded-full border border-white/10 backdrop-blur-sm">
-                        {characterName} Dance Moves
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Play Overlay Button */}
-                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition flex items-center justify-center">
-                    <div className="w-12 h-12 rounded-full bg-white/90 hover:bg-white text-neutral-900 flex items-center justify-center shadow-xl group-hover:scale-110 transition">
-                      <svg className="w-5 h-5 fill-current translate-x-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                    </div>
-                  </div>
-
-                  {/* Track label badge on preview */}
-                  <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] text-white border border-white/10">
-                    <span>🎵</span>
-                    <span className="font-semibold truncate max-w-[180px]">
-                      {item.song?.title || 'Douala Makossa'}
-                    </span>
-                  </div>
-
-                  {/* Moves timeline pills */}
-                  <div className="absolute bottom-2.5 right-3 hidden sm:flex items-center gap-1">
-                    {item.moves_timeline?.map((m, idx) => (
-                      <span
-                        key={idx}
-                        className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-[#8FA993] border border-[#536D56]/30 uppercase"
-                      >
-                        {m.action}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                  )
+                })()}
 
                 {/* Error Banner if vote failed */}
                 {errorMsg && (
