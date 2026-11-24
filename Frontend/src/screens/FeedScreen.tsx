@@ -1,0 +1,486 @@
+import React, { useState, useEffect } from 'react'
+import type { Challenge, Creation } from '../types'
+import {
+  castVote,
+  fetchActiveChallenges,
+  fetchChallengeById,
+  fetchFeed,
+  recordCreationView,
+} from '../lib/api'
+import { useAuth } from '../context/AuthContext'
+import { useAudio } from '../context/AudioContext'
+import { useLanguage } from '../context/LanguageContext'
+import { ReportModal } from '../components/ReportModal'
+
+export const FeedScreen: React.FC = () => {
+  const { user, token, openLoginModal } = useAuth()
+  const { playSong } = useAudio()
+  const { t } = useLanguage()
+
+  const [feedItems, setFeedItems] = useState<Creation[]>([])
+  const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null)
+  const [mobileLeaderboardTab, setMobileLeaderboardTab] = useState<'top' | 'rising'>('top')
+  const [mobileRankings, setMobileRankings] = useState<Creation[]>([])
+  const [loading, setLoading] = useState(true)
+
+  // Report modal state
+  const [reportingTarget, setReportingTarget] = useState<{ id: string; title: string } | null>(null)
+
+  // Track voted creation IDs locally to provide instant feedback
+  const [votedIds, setVotedIds] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem('beattoons_voted_ids')
+    return saved ? new Set(JSON.parse(saved)) : new Set()
+  })
+  const [voteErrors, setVoteErrors] = useState<Record<string, string>>({})
+  const [votingId, setVotingId] = useState<string | null>(null)
+
+  // Load feed and active challenge
+  useEffect(() => {
+    let mounted = true
+    const loadFeed = async () => {
+      setLoading(true)
+      try {
+        const [creations, challenges] = await Promise.all([
+          fetchFeed(),
+          fetchActiveChallenges(),
+        ])
+        if (!mounted) return
+        setFeedItems(creations)
+        if (challenges && challenges.length > 0) {
+          setActiveChallenge(challenges[0])
+        }
+      } catch (err) {
+        console.warn('Failed loading feed:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+    loadFeed()
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  // Load mobile leaderboard when active challenge changes
+  useEffect(() => {
+    let mounted = true
+    if (!activeChallenge) return
+
+    const loadRankings = async () => {
+      try {
+        const ch = await fetchChallengeById(activeChallenge.id, mobileLeaderboardTab)
+        if (mounted && ch?.creations) {
+          setMobileRankings(ch.creations)
+        }
+      } catch (err) {
+        console.warn('Failed loading rankings for mobile feed:', err)
+      }
+    }
+    loadRankings()
+    return () => {
+      mounted = false
+    }
+  }, [activeChallenge, mobileLeaderboardTab])
+
+  // Handle Voting (FR-26, FR-27, NFR-9)
+  const handleVote = async (creation: Creation) => {
+    if (!token || !user) {
+      openLoginModal()
+      return
+    }
+
+    if (votedIds.has(creation.id)) {
+      setVoteErrors((prev) => ({
+        ...prev,
+        [creation.id]: 'You have already voted for this creation!',
+      }))
+      return
+    }
+
+    setVotingId(creation.id)
+    setVoteErrors((prev) => {
+      const copy = { ...prev }
+      delete copy[creation.id]
+      return copy
+    })
+
+    try {
+      const res = await castVote(creation.id, token)
+
+      // Update feed item vote count optimistically
+      setFeedItems((prev) =>
+        prev.map((item) =>
+          item.id === creation.id ? { ...item, vote_count: res.vote_count } : item
+        )
+      )
+
+      // Update voted set
+      const nextVoted = new Set(votedIds).add(creation.id)
+      setVotedIds(nextVoted)
+      localStorage.setItem('beattoons_voted_ids', JSON.stringify(Array.from(nextVoted)))
+    } catch (err: any) {
+      setVoteErrors((prev) => ({
+        ...prev,
+        [creation.id]: err?.message || 'Vote failed. Only 1 vote per account allowed.',
+      }))
+    } finally {
+      setVotingId(null)
+    }
+  }
+
+  // Handle Play Stage Preview & increment views (POST /creations/{id}/view, FR-29)
+  const handlePlayPreview = async (creation: Creation) => {
+    if (creation.song?.clip_url) {
+      playSong({
+        id: creation.song.id || creation.id,
+        artist_id: creation.creator_id,
+        title: creation.song.title,
+        genre: creation.song.genre,
+        language: 'Cameroon',
+        clip_url: creation.song.clip_url,
+        duration_sec: 24,
+        bpm: creation.song.bpm || 115,
+        status: 'trending',
+        trending_score: 95,
+      })
+    }
+
+    try {
+      const res = await recordCreationView(creation.id)
+      setFeedItems((prev) =>
+        prev.map((item) =>
+          item.id === creation.id ? { ...item, views: res.views } : item
+        )
+      )
+    } catch (err) {
+      console.warn('View record failed:', err)
+    }
+  }
+
+  // WhatsApp Share helper (FR-25)
+  const handleShareWhatsApp = (creation: Creation) => {
+    const creatorName = creation.creator?.display_name || creation.creator_display_name || 'Creator'
+    const songTitle = creation.song?.title || 'BeatToons Challenge'
+    const text = encodeURIComponent(
+      `🇨🇲 Check out ${creatorName}'s crazy animated dance moves to "${songTitle}" on BeatToons Cameroon! Vote for them here: https://beattoons.app/feed?c=${creation.id}`
+    )
+    window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank')
+  }
+
+  return (
+    <div className="space-y-6 pb-24 md:pb-16 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#FACC15] uppercase tracking-wider">
+            <span>🇨🇲 Community Feed</span>
+          </div>
+          <h2 className="text-2xl font-black text-white tracking-tight">{t('feedTitle')}</h2>
+          <p className="text-xs text-neutral-400 mt-0.5">{t('feedSubtitle')}</p>
+        </div>
+        <span className="text-xs font-mono px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300">
+          FR-26 · FR-33
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="py-20 text-center">
+          <span className="inline-block w-6 h-6 border-2 border-[#536D56] border-t-transparent rounded-full animate-spin mb-3" />
+          <p className="text-xs text-neutral-400">Loading animated creations...</p>
+        </div>
+      ) : feedItems.length === 0 ? (
+        <div className="p-8 rounded-3xl bg-[#121212] border border-neutral-800 text-center space-y-2">
+          <div className="text-3xl">🎭</div>
+          <h3 className="text-base font-bold text-white">No creations yet in the feed</h3>
+          <p className="text-xs text-neutral-400">Be the first to animate a character in Studio!</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {feedItems.map((item) => {
+            const hasVoted = votedIds.has(item.id)
+            const isVotingThis = votingId === item.id
+            const creatorName = item.creator?.display_name || item.creator_display_name || 'Kumba Dancer'
+            const creatorRegion = item.creator?.region || item.creator_region || 'Southwest'
+            const characterName = item.character_id || item.character || 'KmerBoy'
+            const errorMsg = voteErrors[item.id]
+
+            return (
+              <div
+                key={item.id}
+                className="rounded-3xl bg-[#121212] border border-[#536D56]/40 p-5 sm:p-6 shadow-2xl space-y-4 hover:border-[#536D56] transition-all"
+              >
+                {/* Creator Header Row */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-[#536D56] to-neutral-800 border border-[#536D56] flex items-center justify-center text-sm font-bold text-white shrink-0 shadow">
+                      {creatorName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-white truncate">{creatorName}</span>
+                        {/* Region Pill */}
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-[#8FA993] font-semibold shrink-0">
+                          {creatorRegion} 🇨🇲
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-neutral-400 truncate">
+                        Animated with <span className="text-white font-medium">{characterName}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Report Button (FR-35) */}
+                  <button
+                    onClick={() =>
+                      setReportingTarget({
+                        id: item.id,
+                        title: `${creatorName}'s Creation`,
+                      })
+                    }
+                    className="p-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-[#F43F5E] transition cursor-pointer"
+                    title={t('reportContent')}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Caption in English / French / Pidgin (FR-23) */}
+                {item.caption && (
+                  <p className="text-xs sm:text-sm text-neutral-200 leading-relaxed font-sans bg-neutral-900/50 p-3 rounded-2xl border border-neutral-800/60">
+                    "{item.caption}"
+                  </p>
+                )}
+
+                {/* Static Stage Preview (Character Animation Preview, FR-24) */}
+                <div
+                  onClick={() => handlePlayPreview(item)}
+                  className="relative w-full aspect-[16/10] sm:aspect-[16/9] rounded-2xl bg-gradient-to-b from-[#1a2e20] to-[#0d160f] border border-[#536D56]/50 overflow-hidden flex flex-col items-center justify-center p-4 cursor-pointer group shadow-inner"
+                >
+                  {/* Spotlight Background effect */}
+                  <div className="absolute top-0 w-48 h-48 bg-[#8FA993]/20 rounded-full blur-3xl pointer-events-none" />
+                  <div className="absolute bottom-0 w-full h-8 bg-black/40 border-t border-[#536D56]/30" />
+
+                  {/* Character Illustration / Stage Representation */}
+                  <div className="relative z-10 flex flex-col items-center group-hover:scale-105 transition-transform duration-200">
+                    <div className="text-6xl sm:text-7xl filter drop-shadow-[0_10px_10px_rgba(0,0,0,0.8)]">
+                      {characterName.toLowerCase().includes('girl') ? '💃' : characterName.toLowerCase().includes('boy') ? '🕺' : '🎉'}
+                    </div>
+
+                    <div className="mt-2 text-center">
+                      <span className="text-xs font-bold text-white bg-black/50 px-3 py-1 rounded-full border border-white/10 backdrop-blur-sm">
+                        {characterName} Dance Moves
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Play Overlay Button */}
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition flex items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-white/90 hover:bg-white text-neutral-900 flex items-center justify-center shadow-xl group-hover:scale-110 transition">
+                      <svg className="w-5 h-5 fill-current translate-x-0.5" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Track label badge on preview */}
+                  <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md text-[11px] text-white border border-white/10">
+                    <span>🎵</span>
+                    <span className="font-semibold truncate max-w-[180px]">
+                      {item.song?.title || 'Douala Makossa'}
+                    </span>
+                  </div>
+
+                  {/* Moves timeline pills */}
+                  <div className="absolute bottom-2.5 right-3 hidden sm:flex items-center gap-1">
+                    {item.moves_timeline?.map((m, idx) => (
+                      <span
+                        key={idx}
+                        className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/70 text-[#8FA993] border border-[#536D56]/30 uppercase"
+                      >
+                        {m.action}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Error Banner if vote failed */}
+                {errorMsg && (
+                  <div className="p-2.5 rounded-xl bg-[#F43F5E]/15 border border-[#F43F5E]/30 text-[#F43F5E] text-xs font-medium flex items-center gap-2">
+                    <span className="text-sm">⚠️</span>
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                {/* Engagement Metrics & Action Buttons */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  {/* View counter & Vote count */}
+                  <div className="flex items-center gap-3 text-xs text-neutral-400 font-mono">
+                    <span className="flex items-center gap-1">
+                      <svg className="w-4 h-4 text-neutral-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      <strong className="text-white font-bold">{item.views || 0}</strong> {t('views')}
+                    </span>
+                    <span>·</span>
+                    <span className="flex items-center gap-1">
+                      <span className="text-[#FACC15]">⚡</span>
+                      <strong className="text-[#FACC15] font-bold">{item.vote_count || 0}</strong> {t('votes')}
+                    </span>
+                  </div>
+
+                  {/* Actions: WhatsApp Share + Vote Button */}
+                  <div className="flex items-center gap-2.5">
+                    {/* WhatsApp Share Link (FR-25) */}
+                    <button
+                      onClick={() => handleShareWhatsApp(item)}
+                      className="px-3.5 py-2 rounded-full bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/30 text-[#25D366] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                      title={t('shareWhatsapp')}
+                    >
+                      <span>💬</span>
+                      <span className="hidden sm:inline">WhatsApp</span>
+                    </button>
+
+                    {/* Vote Button (POST /votes, FR-26, FR-27) */}
+                    <button
+                      onClick={() => handleVote(item)}
+                      disabled={hasVoted || isVotingThis}
+                      className={`px-5 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer ${
+                        hasVoted
+                          ? 'bg-[#536D56] text-white cursor-default'
+                          : 'bg-white hover:bg-neutral-100 text-neutral-900'
+                      }`}
+                    >
+                      {isVotingThis ? (
+                        <>
+                          <span className="w-3.5 h-3.5 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
+                          <span>Voting...</span>
+                        </>
+                      ) : hasVoted ? (
+                        <>
+                          <span>✓</span>
+                          <span>{t('voted')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-[#F43F5E]">✦</span>
+                          <span>{t('vote')}</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Mobile Top Creators • Live Ranking (Directly below feed cards on mobile per FR-29, FR-30) */}
+          <div className="lg:hidden mt-8 rounded-3xl bg-[#121212] border border-[#536D56]/40 p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-800">
+              <div>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-[#FACC15] uppercase tracking-wider">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Live Ranking</span>
+                </div>
+                <h3 className="text-base font-black text-white tracking-tight">
+                  {t('leaderboardTitle')}
+                </h3>
+              </div>
+              <span className="text-[10px] text-neutral-400 font-mono">FR-29 · FR-30</span>
+            </div>
+
+            {/* Tabs for mobile leaderboard */}
+            <div className="grid grid-cols-2 gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-xl">
+              <button
+                onClick={() => setMobileLeaderboardTab('top')}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  mobileLeaderboardTab === 'top'
+                    ? 'bg-[#536D56] text-white shadow'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                {t('tabTop')}
+              </button>
+              <button
+                onClick={() => setMobileLeaderboardTab('rising')}
+                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
+                  mobileLeaderboardTab === 'rising'
+                    ? 'bg-[#536D56] text-white shadow'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                <span>{t('tabRising')}</span>
+                <span className="text-[10px] text-[#FACC15]">⚡</span>
+              </button>
+            </div>
+
+            {/* Mobile rankings list */}
+            <div className="space-y-2">
+              {mobileRankings.map((c, index) => {
+                const isGold = index === 0
+                const isSilver = index === 1
+                const isBronze = index === 2
+                return (
+                  <div
+                    key={c.id}
+                    className={`flex items-center justify-between p-2.5 rounded-2xl border transition ${
+                      isGold
+                        ? 'bg-neutral-900 border-[#FACC15]/40'
+                        : 'bg-neutral-900/60 border-neutral-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+                          isGold
+                            ? 'bg-[#FACC15] text-neutral-900'
+                            : isSilver
+                            ? 'bg-neutral-200 text-neutral-900'
+                            : isBronze
+                            ? 'bg-amber-700 text-white'
+                            : 'bg-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        {index + 1}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">
+                          {c.creator_display_name || 'Creator'}
+                        </div>
+                        <div className="text-[10px] text-neutral-400 truncate">
+                          {c.creator_region || 'Cameroon'} 🇨🇲
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-mono font-bold text-[#FACC15]">
+                        {c.vote_count || 0} votes
+                      </div>
+                      <div className="text-[10px] text-neutral-400 font-mono">
+                        {Math.round((c.engagement_rate || 0) * 100)}% eng
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {reportingTarget && (
+        <ReportModal
+          isOpen={!!reportingTarget}
+          onClose={() => setReportingTarget(null)}
+          targetType="creation"
+          targetId={reportingTarget.id}
+          targetTitle={reportingTarget.title}
+        />
+      )}
+    </div>
+  )
+}

@@ -1,0 +1,17 @@
+{
+  "name": "BeatToons Cameroon",
+  "short_name": "BeatToons",
+  "description": "Cameroon-first music challenge and animation platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#536D56",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}
+

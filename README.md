@@ -24,12 +24,13 @@ The backend is built with **FastAPI** and managed with **`uv`**.
 
 2. Run the development server (uv will automatically sync dependencies into `.venv`):
    ```bash
-   uv run uvicorn main:app --reload --port 8000
+   uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
    ```
    *Alternative:*
    ```bash
    uv run python main.py
    ```
+   *(Listening on `0.0.0.0` allows your mobile phone and other devices on the same Wi-Fi network to connect).*
 
 3. The API will be available at:
    - **Health check:** [http://localhost:8000/health](http://localhost:8000/health)
@@ -67,12 +68,30 @@ The frontend is built with **React**, **Vite**, **TypeScript**, and **Tailwind C
 
 ---
 
-## Verifying the Connection
+## Verifying the Connection (Desktop & Mobile Phone)
 
-1. Start the backend on port 8000 (`uv run uvicorn main:app --reload --port 8000`).
-2. Start the frontend on port 5173 (`npm run dev`).
-3. Open [http://localhost:5173](http://localhost:5173) in your mobile browser or responsive device mode (390px–430px width).
-4. The screen will query `GET http://localhost:8000/health` and show the green **API Connected** badge.
+### On Your Computer
+1. Start the backend on all network interfaces:
+   ```bash
+   cd backend
+   uv run uvicorn main:app --reload --host 0.0.0.0 --port 8000
+   ```
+2. In another terminal, start the frontend dev server:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+3. Open on your computer at:
+   - [http://localhost:5173](http://localhost:5173)
+
+### On Your Mobile Phone (Same Wi-Fi)
+1. Make sure your phone is connected to the same Wi-Fi network as your computer.
+2. Vite will display your Network IP in the terminal (e.g. `http://192.168.1.33:5173`).
+3. Open that address in your mobile phone's browser (e.g., Safari or Chrome):
+   ```
+   http://192.168.1.33:5173
+   ```
+4. The frontend will automatically route API requests to your computer's IP (`http://192.168.1.33:8000/health`) and show the green **API Connected** badge right on your phone!
 
 ---
 
