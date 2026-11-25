@@ -244,6 +244,7 @@ export interface MoveBlock {
 export interface Creation {
   id: string
   challenge_id: string
+  challenge_title?: string
   creator_id: string
   character_id?: string
   character?: string
@@ -287,6 +288,7 @@ export interface Challenge {
   starts_at?: string
   ends_at: string
   creations_count?: number
+  entries_count?: number
   creations?: Creation[]
   tab?: 'top' | 'rising'
   created_at?: string

@@ -35,6 +35,7 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
 
   const [activeTab, setActiveTab] = useState<MusicTab>('all')
   const [selectedGenre, setSelectedGenre] = useState<string>('All')
+  const [searchQuery, setSearchQuery] = useState<string>('')
   const [savingIds, setSavingIds] = useState<Record<string, boolean>>({})
   const [vaultError, setVaultError] = useState<string | null>(null)
 
@@ -132,8 +133,25 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
       const gLower = selectedGenre.toLowerCase()
       base = base.filter((s) => (s.genre || '').toLowerCase().includes(gLower))
     }
+
+    const q = searchQuery.trim().toLowerCase()
+    if (q) {
+      base = base.filter((s) => {
+        const artist =
+          s.artist_name ||
+          s.artist?.artist_profile?.artist_name ||
+          s.artist?.display_name ||
+          ''
+        return (
+          s.title.toLowerCase().includes(q) ||
+          artist.toLowerCase().includes(q) ||
+          (s.genre || '').toLowerCase().includes(q) ||
+          (s.album_name || '').toLowerCase().includes(q)
+        )
+      })
+    }
     return base
-  }, [activeTab, selectedGenre, songs, offlineAsSongs])
+  }, [activeTab, selectedGenre, searchQuery, songs, offlineAsSongs])
 
   // Grouped by album_name for "Albums & EPs" tab
   const groupedAlbums = useMemo(() => {
@@ -411,6 +429,36 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
           </div>
         </div>
       )}
+
+      {/* Music Search Bar */}
+      <div className="relative">
+        <svg
+          className="w-4 h-4 text-neutral-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 104.5 4.5a7.5 7.5 0 0012.15 12.15z" />
+        </svg>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search tracks, artists, albums, or genres..."
+          className="w-full bg-[#121212] border border-[#536D56]/40 rounded-2xl pl-11 pr-10 py-2.5 text-sm text-white placeholder-neutral-500 focus:outline-none focus:border-[#FACC15] transition"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-xs flex items-center justify-center cursor-pointer"
+            aria-label="Clear search"
+          >
+            ✕
+          </button>
+        )}
+      </div>
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center gap-2">

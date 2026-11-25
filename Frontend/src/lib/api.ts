@@ -220,16 +220,6 @@ function getLocalCreations(): Creation[] {
   return []
 }
 
-function saveLocalCreation(creation: Creation) {
-  try {
-    const existing = getLocalCreations()
-    const updated = [creation, ...existing.filter((c) => c.id !== creation.id)]
-    localStorage.setItem('camvibe_local_creations', JSON.stringify(updated.slice(0, 20)))
-  } catch {
-    // ignore
-  }
-}
-
 export async function fetchFeed(challengeId?: string | null): Promise<Creation[]> {
   const url = challengeId
     ? `${API_BASE}/feed?challenge_id=${encodeURIComponent(challengeId)}`

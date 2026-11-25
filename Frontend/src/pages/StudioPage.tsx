@@ -445,24 +445,6 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
     seek(startSec)
   }
 
-  // Adjust song crop range (strictly enforces start + duration <= songDuration)
-  const handleCropChange = (newStart: number, newEnd: number) => {
-    const maxStart = Math.max(0, Math.floor(songDuration - 4))
-    const clampedStart = Math.max(0, Math.min(Math.round(newStart), maxStart))
-    const availMax = Math.max(4, Math.floor(songDuration - clampedStart))
-    const desiredDur = Math.min(30, Math.max(4, Math.round(newEnd - clampedStart)))
-    const clampedDur = Math.min(desiredDur, availMax)
-    const clampedEnd = clampedStart + clampedDur
-
-    setClipStart(clampedStart)
-    setClipEnd(clampedEnd)
-    setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clampedStart, clampedEnd, prev))
-
-    if (currentTime < clampedStart || currentTime >= clampedEnd) {
-      seek(clampedStart)
-    }
-  }
-
   // Preview only from clipStart to clipEnd
   const handlePreviewCut = () => {
     const targetSong = selectedChallenge?.song || currentSong || KOCEE_DEMO_SONG
