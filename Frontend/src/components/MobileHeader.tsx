@@ -25,7 +25,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({ onTabChange }) => {
           </span>
         </div>
         <div>
-          <span className="text-base font-black text-white tracking-tight">BeatToons</span>
+          <span className="text-base font-black text-white tracking-tight">CamVibe</span>
           <span className="ml-1 text-xs">🇨🇲</span>
         </div>
       </div>

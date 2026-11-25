@@ -197,7 +197,7 @@ export const ChallengesScreen: React.FC<ChallengesScreenProps> = ({ onNavigateTa
                     <button
                       onClick={() => {
                         if (song?.id) {
-                          localStorage.setItem('beattoons_studio_song_id', song.id)
+                          localStorage.setItem('camvibe_studio_song_id', song.id)
                         }
                         onNavigateTab('studio', {
                           challenge_id: ch.id,

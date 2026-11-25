@@ -18,8 +18,8 @@ from routers.users import router as users_router
 from routers.votes import router as votes_router
 
 app = FastAPI(
-    title="BeatToons API",
-    description="Backend API for BeatToons — a Cameroon-first mobile music challenge platform (CIMFEST Hackathon 2026).",
+    title="CamVibe API",
+    description="Backend API for CamVibe — a Cameroon-first mobile music challenge platform (CIMFEST Hackathon 2026).",
     version="1.0.0",
 )
 
@@ -50,7 +50,7 @@ app.include_router(payments_router)
 def health_check():
     return {
         "status": "ok",
-        "service": "BeatToons API",
+        "service": "CamVibe API",
     }
 
 
@@ -160,5 +160,5 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "8000"))
     lan_ip = _get_lan_ip()
-    print(f"BeatToons API listening on http://{host}:{port} (LAN: http://{lan_ip}:{port})")
+    print(f"CamVibe API listening on http://{host}:{port} (LAN: http://{lan_ip}:{port})")
     uvicorn.run("main:app", host=host, port=port, reload=True)

@@ -209,7 +209,7 @@ export async function fetchChallengeById(challengeId: string, tab: 'top' | 'risi
 
 function getLocalCreations(): Creation[] {
   try {
-    const raw = localStorage.getItem('beattoons_local_creations')
+    const raw = localStorage.getItem('camvibe_local_creations')
     if (raw) {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) return parsed
@@ -224,7 +224,7 @@ function saveLocalCreation(creation: Creation) {
   try {
     const existing = getLocalCreations()
     const updated = [creation, ...existing.filter((c) => c.id !== creation.id)]
-    localStorage.setItem('beattoons_local_creations', JSON.stringify(updated.slice(0, 20)))
+    localStorage.setItem('camvibe_local_creations', JSON.stringify(updated.slice(0, 20)))
   } catch {
     // ignore
   }
@@ -346,7 +346,7 @@ export async function submitCreation(
     const created: Creation = await res.json()
     clearApiCache()
     try {
-      localStorage.removeItem('beattoons_local_creations')
+      localStorage.removeItem('camvibe_local_creations')
     } catch {
       // ignore
     }

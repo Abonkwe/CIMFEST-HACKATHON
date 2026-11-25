@@ -70,11 +70,11 @@ def direct_pay(
     amount: int,
     phone: str,
     medium: str = "mobile money",
-    name: str = "BeatToons Fan",
-    email: str = "fan@beattoons.cm",
+    name: str = "CamVibe Fan",
+    email: str = "fan@camvibe.cm",
     user_id: str = "",
     external_id: str = "",
-    message: str = "BeatToons Artist Tip",
+    message: str = "CamVibe Artist Tip",
 ) -> Dict[str, Any]:
     """Initiate a Fapshi Mobile Money collection via POST /direct-pay."""
     clean_phone = normalize_cameroon_phone(phone)
@@ -94,8 +94,8 @@ def direct_pay(
         "amount": int(amount),
         "phone": clean_phone,
         "medium": clean_medium,
-        "name": name or "BeatToons Fan",
-        "email": email or "fan@beattoons.cm",
+        "name": name or "CamVibe Fan",
+        "email": email or "fan@camvibe.cm",
         "userId": str(user_id),
         "externalId": str(external_id),
         "message": message,
@@ -174,11 +174,11 @@ def disburse_payout(
     amount: int,
     phone: str,
     medium: str = "mobile money",
-    name: str = "BeatToons Artist",
-    email: str = "artist@beattoons.cm",
+    name: str = "CamVibe Artist",
+    email: str = "artist@camvibe.cm",
     user_id: str = "",
     external_id: str = "",
-    message: str = "BeatToons Vault Payout",
+    message: str = "CamVibe Vault Payout",
 ) -> Dict[str, Any]:
     """Disburse Mobile Money funds to an artist via POST /payout."""
     clean_phone = normalize_cameroon_phone(phone)
@@ -197,8 +197,8 @@ def disburse_payout(
         "amount": int(amount),
         "phone": clean_phone,
         "medium": clean_medium,
-        "name": name or "BeatToons Artist",
-        "email": email or "artist@beattoons.cm",
+        "name": name or "CamVibe Artist",
+        "email": email or "artist@camvibe.cm",
         "userId": str(user_id),
         "externalId": str(external_id),
         "message": message,

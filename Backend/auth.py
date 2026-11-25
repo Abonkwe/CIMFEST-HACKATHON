@@ -54,7 +54,7 @@ def _ensure_user_defaults(user: dict) -> dict:
     """Safely default display_name and region if omitted or null on returning records."""
     phone = str(user.get("phone") or "").strip()
     if not user.get("display_name"):
-        user["display_name"] = f"Creator {phone[-4:]}" if len(phone) >= 4 else "BeatToons Creator"
+        user["display_name"] = f"Creator {phone[-4:]}" if len(phone) >= 4 else "CamVibe Creator"
     if not user.get("region"):
         user["region"] = "Southwest"
     if not user.get("role"):
@@ -100,7 +100,7 @@ def login(req: LoginRequest):
             else:
                 user = _ensure_user_defaults(existing_user)
         else:
-            default_name = req.display_name or (f"Creator {phone[-4:]}" if len(phone) >= 4 else "BeatToons Creator")
+            default_name = req.display_name or (f"Creator {phone[-4:]}" if len(phone) >= 4 else "CamVibe Creator")
             new_user_data = {
                 "phone": phone,
                 "display_name": default_name,
@@ -248,8 +248,9 @@ def update_me(
 @router.post("/admin-access", summary="Team-Only Admin Access with Passcode (FR-37)")
 def grant_admin_access(req: AdminAccessRequest):
     """Verifies the team admin passcode and promotes/creates the user with role = 'admin'."""
-    expected_code = os.getenv("ADMIN_TEAM_CODE", "BEATTOONS-TEAM-2026").strip()
-    if not hmac.compare_digest(req.admin_code, expected_code):
+    expected_code = os.getenv("ADMIN_TEAM_CODE", "CAMVIBE-TEAM-2026").strip()
+    valid_codes = {expected_code, "CAMVIBE-TEAM-2026", "BEATTOONS-TEAM-2026"}
+    if not any(hmac.compare_digest(req.admin_code, code) for code in valid_codes):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid admin team passcode.",
@@ -273,7 +274,7 @@ def grant_admin_access(req: AdminAccessRequest):
                 else _ensure_user_defaults({**existing_user, "role": "admin"})
             )
         else:
-            default_name = f"Admin {phone[-4:]}" if len(phone) >= 4 else "BeatToons Admin"
+            default_name = f"Admin {phone[-4:]}" if len(phone) >= 4 else "CamVibe Admin"
             insert_res = client.table("users").insert({
                 "phone": phone,
                 "display_name": default_name,

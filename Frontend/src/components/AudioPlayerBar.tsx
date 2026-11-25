@@ -39,10 +39,10 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({ onNavigateTab })
       })
     }
     syncOffline()
-    window.addEventListener('beattoons-vault-updated', syncOffline)
+    window.addEventListener('camvibe-vault-updated', syncOffline)
     return () => {
       mounted = false
-      window.removeEventListener('beattoons-vault-updated', syncOffline)
+      window.removeEventListener('camvibe-vault-updated', syncOffline)
     }
   }, [currentSong?.id])
 
@@ -156,7 +156,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({ onNavigateTab })
                 </span>
                 {isPlayingOffline && (
                   <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shrink-0">
-                    🔒 Offline Vault • In-App Protected
+                    🔒 Protected • Plays in CamVibe Only
                   </span>
                 )}
               </div>
@@ -260,7 +260,7 @@ export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({ onNavigateTab })
             <button
               type="button"
               onClick={() => {
-                localStorage.setItem('beattoons_studio_song_id', currentSong.id)
+                localStorage.setItem('camvibe_studio_song_id', currentSong.id)
                 onNavigateTab('studio', { song_id: currentSong.id })
               }}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FACC15]/15 hover:bg-[#FACC15]/25 text-[#FACC15] border border-[#FACC15]/40 text-[11px] font-bold transition cursor-pointer shrink-0"

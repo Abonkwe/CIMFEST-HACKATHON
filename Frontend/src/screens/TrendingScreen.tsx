@@ -149,7 +149,7 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
             <button
               onClick={() => {
                 if (activeChallenge?.song?.id) {
-                  localStorage.setItem('beattoons_studio_song_id', activeChallenge.song.id)
+                  localStorage.setItem('camvibe_studio_song_id', activeChallenge.song.id)
                 }
                 onNavigateTab('studio')
               }}
@@ -364,7 +364,7 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
                     <button
                       type="button"
                       onClick={() => {
-                        localStorage.setItem('beattoons_studio_song_id', song.id)
+                        localStorage.setItem('camvibe_studio_song_id', song.id)
                         onNavigateTab('studio')
                       }}
                       className="hidden xs:inline-flex sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#536D56]/25 hover:bg-[#536D56]/45 text-[#8FA993] hover:text-white border border-[#536D56]/50 text-[11px] font-bold transition cursor-pointer"

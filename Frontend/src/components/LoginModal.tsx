@@ -39,7 +39,7 @@ const DEMO_PRESETS = [
     badgeColor: 'bg-[#F43F5E]/20 text-[#F43F5E] border-[#F43F5E]/30',
   },
   {
-    name: 'Admin BeatToons',
+    name: 'Admin CamVibe',
     phone: '+237670000001',
     role: 'Administrator',
     region: 'Centre',
@@ -345,7 +345,7 @@ const LoginModalContent: React.FC<LoginModalContentProps> = ({
             </h3>
             <p className="text-xs text-neutral-400">
               {mode === 'admin'
-                ? 'Authorized BeatToons team members only'
+                ? 'Authorized CamVibe team members only'
                 : 'Cameroon Phone Verification'}
             </p>
           </div>
@@ -367,7 +367,7 @@ const LoginModalContent: React.FC<LoginModalContentProps> = ({
               onClick={onClose}
               className="w-full py-2.5 px-5 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 font-bold text-xs transition cursor-pointer"
             >
-              Done — Explore BeatToons
+              Done — Explore CamVibe
             </button>
           </div>
         ) : (
@@ -881,7 +881,7 @@ const LoginModalContent: React.FC<LoginModalContentProps> = ({
 
         {/* Discreet Team / Admin Login Footer Link */}
         <div className="mt-4 pt-3 border-t border-neutral-900 flex items-center justify-between text-[11px] text-neutral-500">
-          <span>BeatToons Cameroon</span>
+          <span>CamVibe Cameroon</span>
           {mode === 'admin' ? (
             <button
               type="button"

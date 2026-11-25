@@ -247,9 +247,9 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
         const requestedSongId =
           (typeof window !== 'undefined'
             ? new URLSearchParams(window.location.search).get('song_id')
-            : null) || localStorage.getItem('beattoons_studio_song_id')
-        if (localStorage.getItem('beattoons_studio_song_id')) {
-          localStorage.removeItem('beattoons_studio_song_id')
+            : null) || localStorage.getItem('camvibe_studio_song_id')
+        if (localStorage.getItem('camvibe_studio_song_id')) {
+          localStorage.removeItem('camvibe_studio_song_id')
         }
 
         const matchedByChallenge = urlChallengeId
@@ -614,7 +614,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
         if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl)
         const nextUrl = URL.createObjectURL(blob)
         setVideoBlob(blob)
-        setVideoFilename(`beattoons_${entryType}_${Date.now()}.webm`)
+        setVideoFilename(`camvibe_${entryType}_${Date.now()}.webm`)
         setVideoPreviewUrl(nextUrl)
         setVideoDurationSec(elapsed)
         setVideoPreviewPlaying(false)
@@ -782,7 +782,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                 <span>
                   Entering Challenge:{' '}
                   {selectedChallenge.title ||
-                    `${selectedChallenge.song?.artist_name || 'BeatToons'} — ${
+                    `${selectedChallenge.song?.artist_name || 'CamVibe'} — ${
                       selectedChallenge.song?.title || 'Challenge'
                     }`}
                 </span>

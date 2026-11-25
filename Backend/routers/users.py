@@ -141,7 +141,7 @@ def get_my_profile(current_user: dict = Depends(get_current_user)):
                 "id": "verified_artist",
                 "name": "Verified Cameroonian Artist",
                 "icon": "✓",
-                "description": "Approved Cameroonian music artist on BeatToons",
+                "description": "Approved Cameroonian music artist on CamVibe",
             })
 
         return {

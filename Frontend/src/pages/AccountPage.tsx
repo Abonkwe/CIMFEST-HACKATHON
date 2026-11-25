@@ -20,7 +20,7 @@ const ARTIST_GENRES = ['Afropop', 'Makossa', 'Bikutsi', 'Hip Hop', 'Afrobeats', 
 
 function getLocalUserCreations(userId: string): Creation[] {
   try {
-    const raw = localStorage.getItem('beattoons_local_creations')
+    const raw = localStorage.getItem('camvibe_local_creations')
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []
@@ -744,7 +744,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigateTab }) => {
                         </button>
                         <div className="min-w-0">
                           <h4 className="text-sm font-bold text-white truncate">
-                            {creation.caption || 'BeatToons Story Creation'}
+                            {creation.caption || 'CamVibe Story Creation'}
                           </h4>
                           <p className="text-xs text-neutral-400 truncate">
                             Track: <span className="text-neutral-200">{songTitleText}</span> ·

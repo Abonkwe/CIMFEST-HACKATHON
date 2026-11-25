@@ -47,7 +47,7 @@ export const AdminPage: React.FC = () => {
         <div className="text-3xl">🔒</div>
         <h2 className="text-lg font-bold text-white">Team Admin Access Required</h2>
         <p className="text-xs text-neutral-400">
-          This dashboard is restricted to authorized BeatToons team members.
+          This dashboard is restricted to authorized CamVibe team members.
         </p>
       </div>
     )
@@ -163,7 +163,7 @@ export const AdminPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                BeatToons Team Admin
+                CamVibe Team Admin
               </h1>
               <span className="px-2.5 py-0.5 rounded-full bg-[#FACC15]/20 text-[#FACC15] border border-[#FACC15]/40 text-[10px] font-bold uppercase">
                 Live

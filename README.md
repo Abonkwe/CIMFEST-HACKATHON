@@ -1,4 +1,4 @@
-# BeatToons 🎵
+# CamVibe 🎵
 
 > A Cameroon-first mobile music challenge Progressive Web App (PWA) built for CIMFEST Hackathon 2026 (Track 2: Music & Entertainment Tech).
 
@@ -98,7 +98,7 @@ The frontend is built with **React**, **Vite**, **TypeScript**, and **Tailwind C
 ## Project Structure
 
 ```text
-BeatToons/
+CamVibe/
 ├── assets/          # Static assets, character sprites, audio clips
 ├── backend/         # FastAPI Python backend managed with uv
 │   ├── main.py      # Entry point & CORS/health endpoints

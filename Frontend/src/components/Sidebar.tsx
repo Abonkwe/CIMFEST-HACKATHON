@@ -119,7 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
             </div>
             <div>
               <div className="flex items-center gap-1">
-                <span className="text-lg font-black tracking-tight text-white">BeatToons</span>
+                <span className="text-lg font-black tracking-tight text-white">CamVibe</span>
                 <span className="text-xs">🇨🇲</span>
               </div>
               <p className="text-[10px] text-neutral-400 font-medium">CIMFEST 2026</p>

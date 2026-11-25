@@ -70,10 +70,10 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
     loadData()
     refreshOfflineList()
 
-    window.addEventListener('beattoons-vault-updated', refreshOfflineList)
+    window.addEventListener('camvibe-vault-updated', refreshOfflineList)
     return () => {
       mounted = false
-      window.removeEventListener('beattoons-vault-updated', refreshOfflineList)
+      window.removeEventListener('camvibe-vault-updated', refreshOfflineList)
     }
   }, [refreshOfflineList])
 
@@ -168,7 +168,7 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
     const matchedChallenge = challenges.find(
       (c) => c.song_id === song.id || c.song?.id === song.id
     )
-    localStorage.setItem('beattoons_studio_song_id', song.id)
+    localStorage.setItem('camvibe_studio_song_id', song.id)
     onNavigateTab('studio', {
       challenge_id: matchedChallenge?.id || null,
       song_id: song.id,
@@ -265,7 +265,7 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
             ) : isSaved ? (
               <>
                 <span>🔒</span>
-                <span>In-App Offline Only</span>
+                <span>Protected • Plays in CamVibe Only</span>
               </>
             ) : (
               <>
@@ -484,7 +484,7 @@ export const MusicPage: React.FC<MusicPageProps> = ({ onNavigateTab }) => {
           </p>
           <p className="text-xs text-neutral-400">
             {activeTab === 'offline'
-              ? 'Tap "Save In-App" on any track to listen offline inside BeatToons without downloading raw MP3 files.'
+              ? 'Tap "Save In-App" on any track to listen offline inside CamVibe without downloading raw MP3 files.'
               : 'Try switching tabs or selecting "All" genres.'}
           </p>
         </div>

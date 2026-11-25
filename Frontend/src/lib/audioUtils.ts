@@ -30,7 +30,7 @@ export function resolveClipUrl(url?: string, songIdOrTitle?: string): string {
 
   // Map placeholders, non-existent domains, or external Pixabay URLs to local demo songs
   if (
-    str.includes('assets.beattoons.app') ||
+    str.includes('assets.camvibe.app') ||
     str.includes('placeholder') ||
     str.includes('pixabay') ||
     str.includes('example.com')

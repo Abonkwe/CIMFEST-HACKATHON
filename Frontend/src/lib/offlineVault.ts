@@ -1,7 +1,7 @@
 import type { Song } from '../types'
 import { resolveClipUrl } from './audioUtils'
 
-const DB_NAME = 'beattoons_offline_vault'
+const DB_NAME = 'camvibe_offline_vault'
 const DB_VERSION = 1
 const STORE_NAME = 'songs'
 
@@ -37,7 +37,7 @@ export interface OfflineSongMeta {
 
 function notifyVaultUpdated(): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('beattoons-vault-updated'))
+    window.dispatchEvent(new CustomEvent('camvibe-vault-updated'))
   }
 }
 

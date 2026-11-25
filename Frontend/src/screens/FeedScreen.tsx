@@ -79,7 +79,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
 
   // Track voted creation IDs locally to provide instant feedback
   const [votedIds, setVotedIds] = useState<Set<string>>(() => {
-    const saved = localStorage.getItem('beattoons_voted_ids')
+    const saved = localStorage.getItem('camvibe_voted_ids')
     return saved ? new Set(JSON.parse(saved)) : new Set()
   })
   const [voteErrors, setVoteErrors] = useState<Record<string, string>>({})
@@ -180,7 +180,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
       // Update voted set
       const nextVoted = new Set(votedIds).add(targetId)
       setVotedIds(nextVoted)
-      localStorage.setItem('beattoons_voted_ids', JSON.stringify(Array.from(nextVoted)))
+      localStorage.setItem('camvibe_voted_ids', JSON.stringify(Array.from(nextVoted)))
       setVotingTarget(null)
     } catch (err: any) {
       const msg = err?.message || 'MTN MoMo payment or vote failed.'
@@ -248,9 +248,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
   // WhatsApp Share helper (FR-25)
   const handleShareWhatsApp = (creation: Creation) => {
     const creatorName = creation.creator?.display_name || creation.creator_display_name || 'Creator'
-    const songTitle = creation.song?.title || 'BeatToons Challenge'
+    const songTitle = creation.song?.title || 'CamVibe Challenge'
     const text = encodeURIComponent(
-      `🇨🇲 Check out ${creatorName}'s crazy animated dance moves to "${songTitle}" on BeatToons Cameroon! Vote for them here: https://beattoons.app/feed?c=${creation.id}`
+      `🇨🇲 Check out ${creatorName}'s crazy animated dance moves to "${songTitle}" on CamVibe Cameroon! Vote for them here: https://camvibe.app/feed?c=${creation.id}`
     )
     window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank')
   }

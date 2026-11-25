@@ -1,4 +1,4 @@
-# BeatToons Backend (FastAPI)
+# CamVibe Backend (FastAPI)
 
 ## Run on Your Local Network (LAN / Wi-Fi)
 

@@ -244,10 +244,10 @@ def donate_via_fapshi(
             amount=req.amount_xaf,
             phone=clean_phone,
             medium=req.medium,
-            name=current_user.get("display_name") or "BeatToons Fan",
+            name=current_user.get("display_name") or "CamVibe Fan",
             user_id=current_user["id"],
             external_id=tx_id,
-            message="BeatToons Artist Tip",
+            message="CamVibe Artist Tip",
         )
     except Exception as exc:
         _update_transaction(client, tx_id, {"status": "FAILED"})
@@ -428,10 +428,10 @@ def withdraw_from_artist_vault(
             amount=req.amount_xaf,
             phone=clean_phone,
             medium=req.medium,
-            name=current_user.get("display_name") or "BeatToons Artist",
+            name=current_user.get("display_name") or "CamVibe Artist",
             user_id=artist_id,
             external_id=tx_id,
-            message="BeatToons Vault Payout",
+            message="CamVibe Vault Payout",
         )
         fapshi_trans_id = payout_res["transId"]
         _update_transaction(

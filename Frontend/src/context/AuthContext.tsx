@@ -54,7 +54,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(() => {
-    const savedUser = localStorage.getItem('beattoons_user')
+    const savedUser = localStorage.getItem('camvibe_user')
     if (savedUser) {
       try {
         return JSON.parse(savedUser)
@@ -66,7 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   })
 
   const [artistProfile, setArtistProfile] = useState<ArtistProfile | null>(() => {
-    const savedProfile = localStorage.getItem('beattoons_artist_profile')
+    const savedProfile = localStorage.getItem('camvibe_artist_profile')
     if (savedProfile) {
       try {
         return JSON.parse(savedProfile)
@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   })
 
   const [token, setToken] = useState<string | null>(() => {
-    return localStorage.getItem('beattoons_token') || null
+    return localStorage.getItem('camvibe_token') || null
   })
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
@@ -88,19 +88,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     if (user && token) {
-      localStorage.setItem('beattoons_user', JSON.stringify(user))
-      localStorage.setItem('beattoons_token', token)
+      localStorage.setItem('camvibe_user', JSON.stringify(user))
+      localStorage.setItem('camvibe_token', token)
     } else {
-      localStorage.removeItem('beattoons_user')
-      localStorage.removeItem('beattoons_token')
+      localStorage.removeItem('camvibe_user')
+      localStorage.removeItem('camvibe_token')
     }
   }, [user, token])
 
   useEffect(() => {
     if (artistProfile && token) {
-      localStorage.setItem('beattoons_artist_profile', JSON.stringify(artistProfile))
+      localStorage.setItem('camvibe_artist_profile', JSON.stringify(artistProfile))
     } else {
-      localStorage.removeItem('beattoons_artist_profile')
+      localStorage.removeItem('camvibe_artist_profile')
     }
   }, [artistProfile, token])
 
@@ -108,9 +108,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null)
     setArtistProfile(null)
     setToken(null)
-    localStorage.removeItem('beattoons_user')
-    localStorage.removeItem('beattoons_artist_profile')
-    localStorage.removeItem('beattoons_token')
+    localStorage.removeItem('camvibe_user')
+    localStorage.removeItem('camvibe_artist_profile')
+    localStorage.removeItem('camvibe_token')
   }, [])
 
   const refreshMe = useCallback(async () => {

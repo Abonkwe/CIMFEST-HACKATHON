@@ -321,7 +321,7 @@ def itunes_search(term: str, limit: int = 3) -> List[Dict[str, Any]]:
         "limit": limit,
     })
     url = f"{ITUNES_SEARCH_URL}?{params}"
-    req = urllib.request.Request(url, headers={"User-Agent": "BeatToonsSeeder/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "CamVibeSeeder/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
@@ -713,7 +713,7 @@ def main() -> None:
 
     # Summary Table
     print("\n" + "=" * 58)
-    print("           BEATTOONS CAMEROON MUSIC SEED SUMMARY          ")
+    print("           CAMVIBE CAMEROON MUSIC SEED SUMMARY          ")
     print("=" * 58)
     print(f"  {'Metric':<38} | {'Count':>12}")
     print("-" * 58)

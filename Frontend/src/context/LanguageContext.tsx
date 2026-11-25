@@ -12,7 +12,7 @@ interface LanguageContextType {
 const translations: Record<Language, Record<string, string>> = {
   en: {
     // Nav
-    appName: 'BeatToons',
+    appName: 'CamVibe',
     tagline: 'Cameroon Music Challenges',
     navTrending: 'Trending',
     navChallenges: 'Challenges',
@@ -89,7 +89,7 @@ const translations: Record<Language, Record<string, string>> = {
     closePlayer: 'Close player',
 
     // Modals
-    loginModalTitle: 'Enter BeatToons Cameroon',
+    loginModalTitle: 'Enter CamVibe Cameroon',
     phoneLabel: 'Cameroon Phone Number',
     displayNameLabel: 'Display Name / Nickname',
     regionLabel: 'Region in Cameroon',
@@ -97,7 +97,7 @@ const translations: Record<Language, Record<string, string>> = {
     otpHint: 'Demo verification code: 123456',
     quickDemoProfiles: 'Quick Demo Profiles (1-Click Fill)',
     cancel: 'Cancel',
-    confirmLogin: 'Continue with BeatToons',
+    confirmLogin: 'Continue with CamVibe',
     reportModalTitle: 'Report Inappropriate Content',
     reportReasonLabel: 'Reason for Reporting',
     reasonInappropriate: 'Inappropriate or offensive content',
@@ -108,7 +108,7 @@ const translations: Record<Language, Record<string, string>> = {
   },
   fr: {
     // Nav
-    appName: 'BeatToons',
+    appName: 'CamVibe',
     tagline: 'Défis Musicaux Camerounais',
     navTrending: 'Tendances',
     navChallenges: 'Défis',
@@ -185,7 +185,7 @@ const translations: Record<Language, Record<string, string>> = {
     closePlayer: 'Fermer le lecteur',
 
     // Modals
-    loginModalTitle: 'Accéder à BeatToons Cameroun',
+    loginModalTitle: 'Accéder à CamVibe Cameroun',
     phoneLabel: 'Numéro de Téléphone Camerounais',
     displayNameLabel: "Nom d'affichage / Pseudonyme",
     regionLabel: 'Région au Cameroun',
@@ -193,7 +193,7 @@ const translations: Record<Language, Record<string, string>> = {
     otpHint: 'Code de démonstration: 123456',
     quickDemoProfiles: 'Profils Démo Rapides (Remplissage en 1 clic)',
     cancel: 'Annuler',
-    confirmLogin: 'Continuer avec BeatToons',
+    confirmLogin: 'Continuer avec CamVibe',
     reportModalTitle: 'Signaler un Contenu Inapproprié',
     reportReasonLabel: 'Motif du Signalement',
     reasonInappropriate: 'Contenu inapproprié ou offensant',
@@ -213,12 +213,12 @@ const LanguageContext = createContext<LanguageContextType>({
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [lang, setLangState] = useState<Language>(() => {
-    const saved = localStorage.getItem('beattoons_lang')
+    const saved = localStorage.getItem('camvibe_lang')
     return saved === 'fr' ? 'fr' : 'en'
   })
 
   useEffect(() => {
-    localStorage.setItem('beattoons_lang', lang)
+    localStorage.setItem('camvibe_lang', lang)
   }, [lang])
 
   const toggleLang = () => {
