@@ -158,23 +158,27 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submitSuccess, setSubmitSuccess] = useState(false)
+  const [awaitingAuthToSubmit, setAwaitingAuthToSubmit] = useState(false)
 
   // Scrubber container ref for smooth seeking
   const scrubberRef = useRef<HTMLInputElement>(null)
+  const hasInitializedRef = useRef(false)
 
-  // Load active challenges & songs, guaranteeing Kocee is at index 0 and selected
+  // Load active challenges & songs once on mount so signing in mid-edit never resets Studio work
   useEffect(() => {
+    if (hasInitializedRef.current) return
+    hasInitializedRef.current = true
     let mounted = true
     const initStudio = async () => {
       setLoading(true)
       try {
-        const [chData] = await Promise.all([
+        const [chData, songsData] = await Promise.all([
           fetchActiveChallenges(),
           fetchTrendingSongs(),
         ])
         if (!mounted) return
 
-        // Prepend Kocee demo challenge so it's always available and selected by default
+        // Prepend Kocee demo challenge so it's always available
         const mergedChallenges: Challenge[] = [
           KOCEE_DEMO_CHALLENGE,
           ...chData.filter(
@@ -183,9 +187,46 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
               c.song?.title !== KOCEE_DEMO_SONG.title
           ),
         ]
+
+        // Also allow picking any trending song that doesn't yet have a dedicated challenge
+        const challengeSongIds = new Set(mergedChallenges.map((c) => c.song_id))
+        for (const song of songsData) {
+          if (!challengeSongIds.has(song.id)) {
+            mergedChallenges.push({
+              id: mergedChallenges[0].id,
+              song_id: song.id,
+              song,
+              status: 'active',
+              ends_at: mergedChallenges[0].ends_at,
+            })
+            challengeSongIds.add(song.id)
+          }
+        }
+
         setChallenges(mergedChallenges)
-        setSelectedChallenge(KOCEE_DEMO_CHALLENGE)
-        loadSong(KOCEE_DEMO_SONG, 42)
+
+        // Check if user clicked "Animate" on a specific song in Trending
+        const requestedSongId = localStorage.getItem('beattoons_studio_song_id')
+        if (requestedSongId) {
+          localStorage.removeItem('beattoons_studio_song_id')
+        }
+        const matchedChallenge = requestedSongId
+          ? mergedChallenges.find((c) => c.song_id === requestedSongId || c.song?.id === requestedSongId)
+          : null
+
+        const initialChallenge = matchedChallenge || KOCEE_DEMO_CHALLENGE
+        const initialSong = initialChallenge.song || KOCEE_DEMO_SONG
+        const initialStart = initialSong.id === KOCEE_DEMO_SONG.id ? 42 : 0
+        const initialEnd =
+          initialSong.id === KOCEE_DEMO_SONG.id
+            ? 58
+            : Math.min(Math.max(initialSong.duration_sec || 20, 12), 24)
+
+        setSelectedChallenge(initialChallenge)
+        setClipStart(initialStart)
+        setClipEnd(initialEnd)
+        setTimelineBlocks((prev) => distributeCroppedWindowToScenes(initialStart, initialEnd, prev))
+        loadSong(initialSong, initialStart)
       } catch (err) {
         console.warn('Failed loading studio challenges:', err)
       } finally {
@@ -293,9 +334,12 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     setSubmitError(null)
 
     if (!user || !token) {
-      openLoginModal()
+      setAwaitingAuthToSubmit(true)
+      openLoginModal('Create a free account to publish your animation')
       return
     }
+
+    setAwaitingAuthToSubmit(false)
 
     if (!selectedChallenge) {
       setSubmitError('Please select an active challenge first.')
@@ -553,15 +597,27 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             <div className="relative">
               <select
                 disabled={loading}
-                value={selectedChallenge?.id || ''}
+                value={selectedChallenge?.song_id || selectedChallenge?.id || ''}
                 onChange={(e) => {
-                  const found = challenges.find((c) => c.id === e.target.value)
+                  const found = challenges.find(
+                    (c) => c.song_id === e.target.value || c.id === e.target.value
+                  )
                   if (found) {
                     setSelectedChallenge(found)
                     if (found.song) {
-                      loadSong(found.song, clipStart)
+                      const nextStart = found.song.id === KOCEE_DEMO_SONG.id ? 42 : 0
+                      const nextEnd =
+                        found.song.id === KOCEE_DEMO_SONG.id
+                          ? 58
+                          : Math.min(Math.max(found.song.duration_sec || 20, 12), 24)
+                      setClipStart(nextStart)
+                      setClipEnd(nextEnd)
+                      setTimelineBlocks((prev) =>
+                        distributeCroppedWindowToScenes(nextStart, nextEnd, prev)
+                      )
+                      loadSong(found.song, nextStart)
                       if (isPlaying) {
-                        playSong(found.song, clipStart)
+                        playSong(found.song, nextStart)
                       }
                     }
                   }
@@ -570,7 +626,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
               >
                 {loading && <option value="">Loading challenges...</option>}
                 {challenges.map((ch) => (
-                  <option key={ch.id} value={ch.id}>
+                  <option key={ch.song_id || ch.id} value={ch.song_id || ch.id}>
                     {ch.song?.title || 'Unknown Track'} — {ch.song?.genre || 'Afropop'} ({ch.song?.bpm || 115} BPM)
                   </option>
                 ))}
@@ -1083,6 +1139,16 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
           </div>
 
           {/* Submission Feedback & Submit Button */}
+          {awaitingAuthToSubmit && user && token && !submitSuccess && (
+            <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs flex items-center gap-2">
+              <span>✓</span>
+              <span>
+                Signed in as <strong>{user.display_name}</strong>! Your animation is preserved — click{' '}
+                <strong>Submit Story to Challenge</strong> below to publish.
+              </span>
+            </div>
+          )}
+
           {submitError && (
             <div className="p-3.5 rounded-2xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs flex items-center gap-2">
               <span>⚠️</span>

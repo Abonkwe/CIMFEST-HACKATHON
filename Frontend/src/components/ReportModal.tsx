@@ -32,7 +32,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!token || !user) {
-      openLoginModal()
+      openLoginModal('Sign in to report content')
       return
     }
 

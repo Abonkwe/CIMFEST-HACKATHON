@@ -138,7 +138,12 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
 
             {/* Crisp white pill button */}
             <button
-              onClick={() => onNavigateTab('studio')}
+              onClick={() => {
+                if (activeChallenge?.song?.id) {
+                  localStorage.setItem('beattoons_studio_song_id', activeChallenge.song.id)
+                }
+                onNavigateTab('studio')
+              }}
               className="py-2.5 px-6 rounded-full font-bold text-sm bg-white hover:bg-neutral-100 text-neutral-900 transition-all shadow-lg active:scale-95 flex items-center gap-2 cursor-pointer group"
             >
               <span>{t('animateNow')}</span>
@@ -216,7 +221,7 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
             </h3>
             <p className="text-xs text-neutral-400">
               {selectedGenre === 'Fresh Pool'
-                ? 'New submissions auditioning before reaching Trending (FR-8, FR-12)'
+                ? 'New submissions auditioning before reaching Trending'
                 : t('chartSubtitle')}
             </p>
           </div>
@@ -306,14 +311,27 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
                     </div>
                   </div>
 
-                  {/* Right: Stats & Play Button */}
-                  <div className="flex items-center gap-3 shrink-0 ml-2">
-                    <div className="text-right hidden sm:block">
+                  {/* Right: Stats, Animate & Play Button */}
+                  <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                    <div className="text-right hidden sm:block mr-1">
                       <div className="text-xs font-mono font-bold text-[#FACC15]">
                         {song.trending_score}
                       </div>
                       <div className="text-[10px] text-neutral-500 uppercase">{t('score')}</div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        localStorage.setItem('beattoons_studio_song_id', song.id)
+                        onNavigateTab('studio')
+                      }}
+                      className="hidden xs:inline-flex sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#536D56]/25 hover:bg-[#536D56]/45 text-[#8FA993] hover:text-white border border-[#536D56]/50 text-[11px] font-bold transition cursor-pointer"
+                      title="Use this song in Studio"
+                    >
+                      <span>🎬</span>
+                      <span>Animate</span>
+                    </button>
 
                     <button
                       onClick={() => (isCurrent ? togglePlay() : playSong(song))}

@@ -55,7 +55,7 @@ export const MobileHeader: React.FC<MobileHeaderProps> = ({ onTabChange }) => {
           </button>
         ) : (
           <button
-            onClick={openLoginModal}
+            onClick={() => openLoginModal()}
             className="px-3 py-1 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 font-bold text-xs transition shadow-sm active:scale-95 cursor-pointer"
           >
             {t('navLogin')}

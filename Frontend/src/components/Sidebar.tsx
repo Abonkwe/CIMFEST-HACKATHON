@@ -157,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
             </div>
             <button
-              onClick={openLoginModal}
+              onClick={() => openLoginModal()}
               className="w-full py-2.5 px-3 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 font-bold text-xs transition shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
             >
               <span>{t('navLogin')}</span>

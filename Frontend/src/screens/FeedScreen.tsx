@@ -87,7 +87,7 @@ export const FeedScreen: React.FC = () => {
   // Handle Voting (FR-26, FR-27, NFR-9)
   const handleVote = async (creation: Creation) => {
     if (!token || !user) {
-      openLoginModal()
+      openLoginModal('Sign in to vote on creations')
       return
     }
 
@@ -189,9 +189,6 @@ export const FeedScreen: React.FC = () => {
           <h2 className="text-2xl font-black text-white tracking-tight">{t('feedTitle')}</h2>
           <p className="text-xs text-neutral-400 mt-0.5">{t('feedSubtitle')}</p>
         </div>
-        <span className="text-xs font-mono px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300">
-          FR-26 · FR-33
-        </span>
       </div>
 
       {loading ? (
@@ -396,7 +393,6 @@ export const FeedScreen: React.FC = () => {
                   {t('leaderboardTitle')}
                 </h3>
               </div>
-              <span className="text-[10px] text-neutral-400 font-mono">FR-29 · FR-30</span>
             </div>
 
             {/* Tabs for mobile leaderboard */}

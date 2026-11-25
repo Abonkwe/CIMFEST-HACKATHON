@@ -1,3 +1,17 @@
+export const CAMEROON_REGIONS = [
+  'Southwest',
+  'Littoral',
+  'Centre',
+  'Northwest',
+  'West',
+  'South',
+  'East',
+  'Adamawa',
+  'North',
+  'Far North',
+  'Abroad',
+] as const
+
 export type UserRole = 'admin' | 'artist' | 'fan_creator'
 
 export interface User {
@@ -17,8 +31,45 @@ export interface ArtistProfile {
   social_links?: Record<string, any>
   release_links?: string[]
   verification_status: 'pending' | 'approved' | 'rejected'
-  reviewed_by?: string
-  reviewed_at?: string
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+}
+
+export interface AdminPendingArtist extends ArtistProfile {
+  user?: {
+    id: string
+    display_name: string
+    phone: string
+    region: string
+    role: UserRole
+  } | null
+}
+
+export interface AdminReport {
+  id: string
+  target_type: 'creation' | 'song'
+  target_id: string
+  reporter_id: string
+  reason: string
+  status: string
+  created_at?: string
+}
+
+export interface AdminQueuesResponse {
+  status: string
+  pending_artists: AdminPendingArtist[]
+  pending_artists_count: number
+  open_reports: AdminReport[]
+  open_reports_count: number
+}
+
+export interface SongCreatePayload {
+  title: string
+  genre: string
+  language: string
+  clip_url: string
+  duration_sec: number
+  bpm: number
 }
 
 export interface Song {
@@ -153,4 +204,25 @@ export interface ReportPayload {
   target_type: 'creation' | 'song'
   target_id: string
   reason: string
+}
+
+export interface ProfileBadge {
+  id: string
+  name: string
+  icon: string
+  description: string
+}
+
+export interface UserProfileStats {
+  creations_count: number
+  votes_received: number
+  votes_cast: number
+}
+
+export interface UserProfileResponse {
+  user: User
+  artist_profile?: ArtistProfile | null
+  creations: Creation[]
+  stats: UserProfileStats
+  badges: ProfileBadge[]
 }

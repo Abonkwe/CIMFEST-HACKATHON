@@ -84,7 +84,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
               </div>
               <h3 className="text-base font-black text-white tracking-tight">Top Trending Tracks</h3>
             </div>
-            <span className="text-xs text-neutral-400 font-mono">FR-10 · FR-14</span>
           </div>
 
           <div className="space-y-2">
@@ -200,7 +199,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
               </div>
               <h3 className="text-base font-black text-white tracking-tight">{t('leaderboardTitle')}</h3>
             </div>
-            <span className="text-xs text-neutral-400 font-mono">FR-29 · FR-30</span>
           </div>
 
           {/* Leaderboard Tabs: Top Creators vs Rising Stars (FR-30) */}
@@ -299,7 +297,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
 
           {/* Fair Virality Explanation */}
           <div className="p-3 rounded-2xl bg-neutral-900/60 border border-neutral-800 text-[10px] text-neutral-400 space-y-1">
-            <span className="font-bold text-neutral-300 block">💡 Fair Virality (FR-29)</span>
+            <span className="font-bold text-neutral-300 block">💡 Fair Virality</span>
             <p>
               Rankings prioritize engagement rate (<code className="text-[#8FA993]">votes / views</code>) so new creators are not buried by raw view counts.
             </p>

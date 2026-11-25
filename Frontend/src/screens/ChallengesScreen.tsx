@@ -64,9 +64,6 @@ export const ChallengesScreen: React.FC<ChallengesScreenProps> = ({ onNavigateTa
           <h2 className="text-2xl font-black text-white tracking-tight">{t('challengesTitle')}</h2>
           <p className="text-xs text-neutral-400 mt-0.5">{t('challengesSubtitle')}</p>
         </div>
-        <span className="text-xs font-mono px-3 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-neutral-300">
-          FR-15 · FR-19
-        </span>
       </div>
 
       {loading ? (
@@ -157,7 +154,12 @@ export const ChallengesScreen: React.FC<ChallengesScreenProps> = ({ onNavigateTa
 
                     {/* Crisp white pill action button */}
                     <button
-                      onClick={() => onNavigateTab('studio')}
+                      onClick={() => {
+                        if (song?.id) {
+                          localStorage.setItem('beattoons_studio_song_id', song.id)
+                        }
+                        onNavigateTab('studio')
+                      }}
                       className="py-2.5 px-5 rounded-full font-bold text-xs bg-white hover:bg-neutral-100 text-neutral-900 transition shadow-md active:scale-95 flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>{t('joinChallenge')}</span>

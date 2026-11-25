@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useRef, useEffect } from 'react'
+import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 import type { Song, StorySFX } from '../types'
 import { resolveClipUrl, storySFX } from '../lib/audioUtils'
 
 interface AudioContextType {
   currentSong: Song | null
   isPlaying: boolean
+  isPlayerVisible: boolean
   currentTime: number
   duration: number
   hasError: boolean
@@ -21,6 +22,7 @@ interface AudioContextType {
 const AudioContext = createContext<AudioContextType>({
   currentSong: null,
   isPlaying: false,
+  isPlayerVisible: false,
   currentTime: 0,
   duration: 20,
   hasError: false,
@@ -37,6 +39,7 @@ const AudioContext = createContext<AudioContextType>({
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isPlayerVisible, setIsPlayerVisible] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(24)
   const [hasError, setHasError] = useState(false)
@@ -45,7 +48,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [audio] = useState<HTMLAudioElement | null>(() => {
     if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
       const a = new Audio()
-      a.preload = 'auto'
+      a.preload = 'none'
       return a
     }
     return null
@@ -55,6 +58,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const audioRef = useRef<HTMLAudioElement | null>(audio)
   const fallbackIntervalRef = useRef<any>(null)
   const currentSongRef = useRef<Song | null>(null)
+  const isIntentionalPlayRef = useRef(false)
 
   useEffect(() => {
     currentSongRef.current = currentSong
@@ -79,17 +83,22 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     const onEnded = () => {
+      isIntentionalPlayRef.current = false
       setIsPlaying(false)
       setCurrentTime(0)
     }
 
     const onError = () => {
+      // Never auto-play fallback audio unless the user intentionally initiated playback
+      if (!isIntentionalPlayRef.current || !currentSongRef.current) {
+        return
+      }
       console.warn('Audio element error or source unavailable, falling back to local song asset.')
       hasErrorRef.current = true
       setHasError(true)
-      // Attempt playing local verified song asset if external failed
-      if (audio.src && !audio.src.includes('kocee_we_di_go_na_go.mp3') && !audio.src.includes('song1.mp3')) {
-        audio.src = '/assets/audio/kocee_we_di_go_na_go.mp3'
+      const currentSrc = audio.getAttribute('src') || ''
+      if (currentSrc && !currentSrc.includes('kocee_we_di_go_na_go.mp3') && !currentSrc.includes('song1.mp3')) {
+        audio.src = '/assets/audio/song1.mp3'
         audio.play().catch(() => {})
       }
     }
@@ -104,8 +113,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       audio.removeEventListener('loadedmetadata', onLoadedMetadata)
       audio.removeEventListener('ended', onEnded)
       audio.removeEventListener('error', onError)
+      isIntentionalPlayRef.current = false
       audio.pause()
-      audio.src = ''
+      audio.removeAttribute('src')
     }
   }, [audio])
 
@@ -163,6 +173,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       currentSong?.id === song.id &&
       (audioRef.current.src.endsWith(resolvedUrl) || audioRef.current.src === resolvedUrl)
 
+    isIntentionalPlayRef.current = true
+    setIsPlayerVisible(true)
+
     if (isSameSong) {
       if (startTime !== undefined && Math.abs(audioRef.current.currentTime - targetStartTime) > 0.15) {
         safeSeek(audioRef.current, targetStartTime)
@@ -196,8 +209,8 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         })
         .catch((err) => {
           console.warn('Audio playback error, falling back to local song asset:', err)
-          if (audioRef.current) {
-            audioRef.current.src = '/assets/audio/kocee_we_di_go_na_go.mp3'
+          if (audioRef.current && isIntentionalPlayRef.current) {
+            audioRef.current.src = '/assets/audio/song1.mp3'
             if (targetStartTime > 0) safeSeek(audioRef.current, targetStartTime)
             audioRef.current
               .play()
@@ -215,9 +228,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }
 
-  // Pre-load song into audio element so duration & waveform can be inspected without autoplaying
-  const loadSong = (song: Song, startTime?: number) => {
+  // Pre-load song into audio element without autoplaying or popping open the floating player bar
+  const loadSong = useCallback((song: Song, startTime?: number) => {
     if (!audioRef.current) return
+    isIntentionalPlayRef.current = false
     const resolvedUrl = resolveClipUrl(song.clip_url, `${song.id} ${song.title} ${song.genre}`)
     const targetSong: Song = { ...song, clip_url: resolvedUrl }
     setCurrentSong(targetSong)
@@ -230,9 +244,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       safeSeek(audioRef.current, initialTime)
     }
     setCurrentTime(initialTime)
-  }
+  }, [])
 
   const pauseSong = () => {
+    isIntentionalPlayRef.current = false
     if (audioRef.current) {
       audioRef.current.pause()
     }
@@ -245,12 +260,14 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (isPlaying) {
       pauseSong()
     } else {
-      if (audioRef.current && !hasError && audioRef.current.src) {
+      isIntentionalPlayRef.current = true
+      setIsPlayerVisible(true)
+      if (audioRef.current && !hasError && audioRef.current.getAttribute('src')) {
         audioRef.current
           .play()
           .then(() => setIsPlaying(true))
           .catch(() => {
-            if (audioRef.current) {
+            if (audioRef.current && isIntentionalPlayRef.current) {
               audioRef.current.src = '/assets/audio/song1.mp3'
               audioRef.current.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(true))
             }
@@ -269,8 +286,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }
 
   const stopSong = () => {
-    pauseSong()
-    seek(0)
+    isIntentionalPlayRef.current = false
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current.removeAttribute('src')
+      audioRef.current.load()
+    }
+    setIsPlaying(false)
+    setIsPlayerVisible(false)
+    setCurrentSong(null)
+    setCurrentTime(0)
   }
 
   // Play Sound Effect (layered cleanly over music)
@@ -283,6 +308,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       value={{
         currentSong,
         isPlaying,
+        isPlayerVisible,
         currentTime,
         duration,
         hasError,

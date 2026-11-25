@@ -12,7 +12,7 @@ import { LoginModal } from './components/LoginModal'
 import { TrendingScreen } from './screens/TrendingScreen'
 import { ChallengesScreen } from './screens/ChallengesScreen'
 import { FeedScreen } from './screens/FeedScreen'
-import { AccountScreen } from './screens/AccountScreen'
+import { AccountPage } from './pages/AccountPage'
 import { StudioPage } from './pages/StudioPage'
 
 function resolveInitialTab(): string {
@@ -75,7 +75,7 @@ const MainShell: React.FC = () => {
           {currentTab === 'challenges' && <ChallengesScreen onNavigateTab={handleTabChange} />}
           {currentTab === 'feed' && <FeedScreen />}
           {currentTab === 'studio' && <StudioPage onNavigateTab={handleTabChange} />}
-          {currentTab === 'account' && <AccountScreen />}
+          {currentTab === 'account' && <AccountPage onNavigateTab={handleTabChange} />}
         </main>
 
         {/* Desktop Right Sticky Sidebar on wide screens (Trending & Challenges & Feed only) */}

@@ -1,10 +1,14 @@
 import type {
+  AdminQueuesResponse,
   ArtistApplicationPayload,
+  ArtistProfile,
   Challenge,
   Creation,
   ReportPayload,
   Song,
+  SongCreatePayload,
   User,
+  UserProfileResponse,
 } from '../types'
 import { KOCEE_DEMO_SONG, KOCEE_DEMO_CHALLENGE } from './storyTemplates'
 
@@ -52,7 +56,12 @@ export async function fetchTrendingSongs(): Promise<Song[]> {
     const res = await fetch(`${API_BASE}/songs/trending`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) return data
+    if (Array.isArray(data) && data.length > 0) {
+      const hasKocee = data.some(
+        (s: Song) => s.id === KOCEE_DEMO_SONG.id || s.title === KOCEE_DEMO_SONG.title
+      )
+      return hasKocee ? data : [KOCEE_DEMO_SONG, ...data]
+    }
     return getFallbackSongs().filter((s) => s.status === 'trending')
   } catch (err) {
     console.warn('Using fallback trending songs:', err)
@@ -78,7 +87,13 @@ export async function fetchActiveChallenges(): Promise<Challenge[]> {
     const res = await fetch(`${API_BASE}/challenges/active`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) return data
+    if (Array.isArray(data) && data.length > 0) {
+      const hasKocee = data.some(
+        (c: Challenge) =>
+          c.id === KOCEE_DEMO_CHALLENGE.id || c.song?.title === KOCEE_DEMO_SONG.title
+      )
+      return hasKocee ? data : [KOCEE_DEMO_CHALLENGE, ...data]
+    }
     return getFallbackChallenges()
   } catch (err) {
     console.warn('Using fallback active challenges:', err)
@@ -214,10 +229,18 @@ export async function submitCreation(
   }
 
   // Fallback if challenge is demo or server rejects: Save locally so creator flow is seamless
+  let activeUser: User | null = null
+  try {
+    const rawUser = localStorage.getItem('beattoons_user')
+    if (rawUser) activeUser = JSON.parse(rawUser)
+  } catch {
+    // ignore
+  }
+
   const localCreation: Creation = {
     id: `local-${Date.now()}`,
     challenge_id: data.challenge_id,
-    creator_id: '00000000-0000-0000-0000-000000000005',
+    creator_id: activeUser?.id || '00000000-0000-0000-0000-000000000005',
     character_id: data.character_id,
     character: data.character_id,
     moves_timeline: data.moves_timeline as any,
@@ -226,8 +249,8 @@ export async function submitCreation(
     vote_count: 0,
     engagement_rate: 0.0,
     created_at: new Date().toISOString(),
-    creator_display_name: 'You (Creator)',
-    creator_region: 'Southwest',
+    creator_display_name: activeUser?.display_name || 'You (Creator)',
+    creator_region: activeUser?.region || 'Southwest',
     song: KOCEE_DEMO_SONG,
     challenge: KOCEE_DEMO_CHALLENGE,
   }
@@ -240,16 +263,27 @@ export async function loginWithPhone(
   otp: string,
   displayName?: string,
   region?: string
-): Promise<{ access_token: string; token_type: string; user: User }> {
+): Promise<{
+  access_token: string
+  token_type: string
+  user: User
+  artist_profile?: ArtistProfile | null
+}> {
+  const payload: Record<string, string> = {
+    phone: phone.trim(),
+    otp: otp.trim(),
+  }
+  if (displayName?.trim()) {
+    payload.display_name = displayName.trim()
+  }
+  if (region?.trim()) {
+    payload.region = region.trim()
+  }
+
   const res = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      phone: phone.trim(),
-      otp: otp.trim(),
-      display_name: displayName?.trim() || undefined,
-      region: region || 'Southwest',
-    }),
+    body: JSON.stringify(payload),
   })
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}))
@@ -258,10 +292,59 @@ export async function loginWithPhone(
   return res.json()
 }
 
+export async function fetchMe(
+  token: string
+): Promise<{ user: User; artist_profile: ArtistProfile | null }> {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    const error = new Error(errData.detail || `Failed to load account (${res.status})`) as Error & {
+      status?: number
+    }
+    error.status = res.status
+    throw error
+  }
+  return res.json()
+}
+
+export async function updateMyProfile(
+  payload: { display_name?: string; region?: string },
+  token: string
+): Promise<{ status: string; user: User; artist_profile?: ArtistProfile | null }> {
+  const res = await fetch(`${API_BASE}/auth/me`, {
+    method: 'PATCH',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to update profile')
+  }
+  return res.json()
+}
+
+export async function fetchMyProfile(token: string): Promise<UserProfileResponse> {
+  const res = await fetch(`${API_BASE}/users/me/profile`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to load creator profile')
+  }
+  return res.json()
+}
+
 export async function applyForArtist(
   payload: ArtistApplicationPayload,
   token: string
-): Promise<{ status: string; message: string; profile: any }> {
+): Promise<{
+  status: string
+  message: string
+  profile: ArtistProfile
+  artist_profile?: ArtistProfile
+}> {
   const res = await fetch(`${API_BASE}/artists/apply`, {
     method: 'POST',
     headers: getHeaders(token),
@@ -272,6 +355,73 @@ export async function applyForArtist(
     throw new Error(errData.detail || 'Failed to submit application')
   }
   return res.json()
+}
+
+export async function uploadSong(payload: SongCreatePayload, token: string): Promise<Song> {
+  const res = await fetch(`${API_BASE}/songs`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to upload song clip')
+  }
+  return res.json()
+}
+
+export async function fetchMySongs(token: string): Promise<Song[]> {
+  const res = await fetch(`${API_BASE}/songs/mine`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to load your uploaded songs')
+  }
+  return res.json()
+}
+
+export async function fetchAdminQueues(token: string): Promise<AdminQueuesResponse> {
+  const res = await fetch(`${API_BASE}/admin/queues`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to fetch admin queues')
+  }
+  return res.json()
+}
+
+export async function reviewArtistApplication(
+  userId: string,
+  decision: 'approved' | 'rejected',
+  token: string
+): Promise<{
+  status: string
+  user_id: string
+  verification_status: 'approved' | 'rejected'
+  artist_profile?: ArtistProfile | null
+  user?: User | null
+  message: string
+}> {
+  const res = await fetch(`${API_BASE}/admin/artists/${userId}/review`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify({ decision }),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || `Failed to ${decision} artist application`)
+  }
+  return res.json()
+}
+
+export async function demoQuickApproveArtist(userId: string): Promise<void> {
+  const adminSession = await loginWithPhone('+237670000001', '123456')
+  if (adminSession.user.role !== 'admin') {
+    throw new Error('Demo admin account (+237670000001) does not have admin role in database.')
+  }
+  await reviewArtistApplication(userId, 'approved', adminSession.access_token)
 }
 
 export async function submitReport(

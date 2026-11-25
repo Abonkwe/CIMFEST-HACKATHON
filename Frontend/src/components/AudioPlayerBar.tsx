@@ -3,15 +3,23 @@ import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 
 export const AudioPlayerBar: React.FC = () => {
-  const { currentSong, isPlaying, togglePlay, pauseSong, stopSong, currentTime, duration, seek } = useAudio()
+  const {
+    currentSong,
+    isPlaying,
+    isPlayerVisible,
+    togglePlay,
+    pauseSong,
+    stopSong,
+    currentTime,
+    duration,
+    seek,
+  } = useAudio()
   const { t } = useLanguage()
 
-  const [closingSongId, setClosingSongId] = useState<string | number | null>(null)
+  const [isClosing, setIsClosing] = useState(false)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const isClosing = currentSong !== null && closingSongId === currentSong.id
-
-  // Cancel any closing timer if song changes or unmounts
+  // Clear pending close timer only on unmount
   useEffect(() => {
     return () => {
       if (closeTimerRef.current) {
@@ -19,34 +27,45 @@ export const AudioPlayerBar: React.FC = () => {
         closeTimerRef.current = null
       }
     }
-  }, [currentSong?.id])
+  }, [])
+
+  // If user starts playing again mid-close animation, cancel closing cleanly
+  useEffect(() => {
+    if (isPlaying && closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+      const id = requestAnimationFrame(() => setIsClosing(false))
+      return () => cancelAnimationFrame(id)
+    }
+  }, [isPlaying])
 
   const handleClose = useCallback(() => {
-    if (!currentSong) return
-    // 1. Immediately pause audio playback
+    if (!currentSong || !isPlayerVisible) return
+    // 1. Immediately pause & terminate audio playback
     pauseSong()
     // 2. Animate bar collapse
-    setClosingSongId(currentSong.id)
+    setIsClosing(true)
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
-    // 3. Complete stop and reset after collapse animation completes
+    // 3. Complete stop and hide bar until the user plays a song again
     closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null
       stopSong()
-      setClosingSongId(null)
+      setIsClosing(false)
     }, 280)
-  }, [currentSong, pauseSong, stopSong])
+  }, [currentSong, isPlayerVisible, pauseSong, stopSong])
 
   // Close on Escape key press
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && currentSong && !isClosing) {
+      if (e.key === 'Escape' && currentSong && isPlayerVisible && !isClosing) {
         handleClose()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentSong, isClosing, handleClose])
+  }, [currentSong, isPlayerVisible, isClosing, handleClose])
 
-  if (!currentSong) return null
+  if (!currentSong || !isPlayerVisible) return null
 
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60)
@@ -98,6 +117,14 @@ export const AudioPlayerBar: React.FC = () => {
                 </span>
                 <span className="text-neutral-500">·</span>
                 <span className="font-mono text-neutral-400">{currentSong.bpm} BPM</span>
+                <span className="text-neutral-500 md:hidden">·</span>
+                <span
+                  className={`md:hidden font-semibold ${
+                    isPlaying ? 'text-emerald-400' : 'text-amber-300'
+                  }`}
+                >
+                  {isPlaying ? 'Playing' : 'Paused'}
+                </span>
               </div>
             </div>
           </div>
@@ -160,9 +187,19 @@ export const AudioPlayerBar: React.FC = () => {
 
         {/* Right Badges & Desktop Close Button (>= md) */}
         <div className="hidden md:flex items-center justify-end gap-2.5 md:w-1/3 text-xs text-neutral-400">
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-300 shrink-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>237 Sound</span>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] shrink-0 ${
+              isPlaying
+                ? 'bg-neutral-900 border-emerald-500/30 text-emerald-300'
+                : 'bg-neutral-900 border-amber-500/30 text-amber-300'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isPlaying ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+            <span>{isPlaying ? 'Playing' : 'Paused'}</span>
           </span>
           <span className="text-[11px] text-neutral-400 bg-[#536D56]/20 border border-[#536D56]/40 px-2 py-0.5 rounded-full font-mono shrink-0">
             {currentSong.language}
