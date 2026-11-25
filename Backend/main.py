@@ -9,6 +9,7 @@ from routers.artists import router as artists_router
 from routers.challenges import router as challenges_router
 from routers.creations import router as creations_router
 from routers.feed import router as feed_router
+from routers.payments import router as payments_router
 from routers.reports import router as reports_router
 from routers.songs import router as songs_router
 from routers.users import router as users_router
@@ -40,6 +41,7 @@ app.include_router(artists_router)
 app.include_router(users_router)
 app.include_router(reports_router)
 app.include_router(admin_router)
+app.include_router(payments_router)
 
 
 @app.get("/health", tags=["Health & Status"])

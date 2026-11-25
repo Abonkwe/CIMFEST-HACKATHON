@@ -13,6 +13,7 @@ import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 import { ReportModal } from '../components/ReportModal'
 import { MomoVoteModal } from '../components/MomoVoteModal'
+import { FapshiDonateModal } from '../components/FapshiDonateModal'
 import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
 
 interface FeedScreenProps {
@@ -38,10 +39,16 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
   const [mobileRankings, setMobileRankings] = useState<Creation[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Report modal state
+  // Report & Tip modal state
   const [reportingTarget, setReportingTarget] = useState<{ id: string; title: string } | null>(null)
   const [votingTarget, setVotingTarget] = useState<Creation | null>(null)
   const [momoModalError, setMomoModalError] = useState<string | null>(null)
+  const [tipTarget, setTipTarget] = useState<{
+    artistId: string
+    artistName: string
+    songTitle?: string
+    creationId?: string
+  } | null>(null)
 
   // Track voted creation IDs locally to provide instant feedback
   const [votedIds, setVotedIds] = useState<Set<string>>(() => {
@@ -417,8 +424,33 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
                     </span>
                   </div>
 
-                  {/* Actions: WhatsApp Share + Vote Button */}
-                  <div className="flex items-center gap-2.5">
+                  {/* Actions: Tip Artist + WhatsApp Share + Vote Button */}
+                  <div className="flex items-center gap-2">
+                    {/* Fapshi MoMo Tip Artist Button */}
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
+                      type="button"
+                      onClick={() =>
+                        setTipTarget({
+                          artistId:
+                            item.song?.artist_id ||
+                            item.creator_id ||
+                            '654566e5-9989-5ce0-a4c8-cc6c9f2722a3',
+                          artistName:
+                            item.song?.artist_name ||
+                            creatorName ||
+                            'Verified Artist',
+                          songTitle: item.song?.title,
+                          creationId: item.id,
+                        })
+                      }
+                      className="px-3 py-2 rounded-full bg-[#FACC15]/15 hover:bg-[#FACC15]/25 border border-[#FACC15]/40 text-[#FACC15] text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      title="Tip Artist via MTN MoMo / Orange Money"
+                    >
+                      <span>💛</span>
+                      <span>Tip</span>
+                    </motion.button>
+
                     {/* WhatsApp Share Link (FR-25) */}
                     <motion.button
                       whileTap={{ scale: 0.92 }}
@@ -610,6 +642,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
         }}
         onConfirmPayAndVote={handleConfirmMomoVote}
       />
+
+      {/* Fapshi Mobile Money Tip Artist Modal */}
+      {tipTarget && (
+        <FapshiDonateModal
+          isOpen={!!tipTarget}
+          onClose={() => setTipTarget(null)}
+          artistId={tipTarget.artistId}
+          artistName={tipTarget.artistName}
+          songTitle={tipTarget.songTitle}
+          creationId={tipTarget.creationId}
+        />
+      )}
     </div>
   )
 }

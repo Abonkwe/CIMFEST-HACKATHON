@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Creation } from '../types'
 
@@ -54,25 +55,36 @@ export const MomoVoteModal: React.FC<MomoVoteModalProps> = ({
     })
   }
 
+  useEffect(() => {
+    if (!creation) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [creation])
+
   const displayError = localError || error
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <AnimatePresence>
       {creation && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto"
           onClick={isSubmitting ? undefined : onClose}
         >
           <motion.div
-            initial={{ y: 40, opacity: 0, scale: 0.96 }}
+            initial={{ y: 20, opacity: 0, scale: 0.96 }}
             animate={{ y: 0, opacity: 1, scale: 1 }}
-            exit={{ y: 40, opacity: 0, scale: 0.96 }}
+            exit={{ y: 20, opacity: 0, scale: 0.96 }}
             transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#121212] border border-neutral-800 shadow-2xl overflow-hidden"
+            className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-[#121212] border border-neutral-800 shadow-2xl my-auto"
           >
             {/* Header with MTN MoMo Branding */}
             <div className="px-6 py-4 bg-gradient-to-r from-[#FFCC00]/20 via-[#FFCC00]/10 to-transparent border-b border-neutral-800 flex items-center justify-between">
@@ -205,6 +217,7 @@ export const MomoVoteModal: React.FC<MomoVoteModalProps> = ({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   )
 }

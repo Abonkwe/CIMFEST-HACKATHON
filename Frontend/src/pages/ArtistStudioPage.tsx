@@ -4,17 +4,25 @@ import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import {
   fetchArtistSongsWithInsights,
+  fetchArtistVault,
   launchArtistChallenge,
   uploadAlbum,
   uploadSong,
+  withdrawFromArtistVault,
 } from '../lib/api'
-import type { AlbumTrackPayload, ArtistSongInsight, Song } from '../types'
+import type {
+  AlbumTrackPayload,
+  ArtistSongInsight,
+  ArtistVaultResponse,
+  FapshiMedium,
+  Song,
+} from '../types'
 
 interface ArtistStudioPageProps {
   onNavigateTab: (tab: string) => void
 }
 
-type StudioTab = 'release' | 'challenge' | 'insights'
+type StudioTab = 'release' | 'challenge' | 'insights' | 'vault'
 
 const SONG_GENRES = ['Afropop', 'Makossa', 'Bikutsi', 'Hip Hop', 'Afrobeats', 'Gospel'] as const
 const SONG_LANGUAGES = ['Pidgin', 'English', 'French'] as const
@@ -44,6 +52,7 @@ const STUDIO_TABS: { id: StudioTab; label: string; icon: string }[] = [
   { id: 'release', label: 'Release Music', icon: '🎵' },
   { id: 'challenge', label: 'Create Challenge', icon: '🔥' },
   { id: 'insights', label: 'My Releases & Insights', icon: '📊' },
+  { id: 'vault', label: 'Vault & Payouts', icon: '💰' },
 ]
 
 export const ArtistStudioPage: React.FC<ArtistStudioPageProps> = ({ onNavigateTab }) => {
@@ -91,6 +100,73 @@ export const ArtistStudioPage: React.FC<ArtistStudioPageProps> = ({ onNavigateTa
   const [challengeLoading, setChallengeLoading] = useState(false)
   const [challengeError, setChallengeError] = useState<string | null>(null)
   const [challengeSuccess, setChallengeSuccess] = useState<string | null>(null)
+
+  // Artist Vault & MoMo Payout state
+  const [vault, setVault] = useState<ArtistVaultResponse | null>(null)
+  const [loadingVault, setLoadingVault] = useState(false)
+  const [withdrawAmount, setWithdrawAmount] = useState<string>('')
+  const [withdrawPhone, setWithdrawPhone] = useState<string>(user?.phone || '+237')
+  const [withdrawMedium, setWithdrawMedium] = useState<FapshiMedium>('mobile money')
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [withdrawError, setWithdrawError] = useState<string | null>(null)
+  const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null)
+
+  const loadArtistVault = useCallback(async () => {
+    if (!token || user?.role !== 'artist') return
+    setLoadingVault(true)
+    try {
+      const data = await fetchArtistVault(token)
+      setVault(data)
+    } catch (err) {
+      console.warn('Failed to load artist vault:', err)
+    } finally {
+      setLoadingVault(false)
+    }
+  }, [token, user?.role])
+
+  useEffect(() => {
+    if (user?.phone) setWithdrawPhone(user.phone)
+  }, [user?.phone])
+
+  useEffect(() => {
+    loadArtistVault()
+  }, [loadArtistVault])
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!token) return
+    setWithdrawError(null)
+    setWithdrawSuccess(null)
+
+    const amt = parseInt(withdrawAmount, 10)
+    if (isNaN(amt) || amt < 100) {
+      setWithdrawError('Minimum withdrawal is 100 XAF.')
+      return
+    }
+    if (vault && amt > vault.available_balance_xaf) {
+      setWithdrawError(`Insufficient balance. Available: ${vault.available_balance_xaf.toLocaleString()} XAF.`)
+      return
+    }
+
+    setWithdrawing(true)
+    try {
+      const res = await withdrawFromArtistVault(
+        {
+          amount_xaf: amt,
+          phone: withdrawPhone,
+          medium: withdrawMedium,
+        },
+        token
+      )
+      setWithdrawSuccess(res.message || `${amt.toLocaleString()} XAF sent to ${res.phone}!`)
+      setWithdrawAmount('')
+      await loadArtistVault()
+    } catch (err: any) {
+      setWithdrawError(err?.message || 'Withdrawal failed.')
+    } finally {
+      setWithdrawing(false)
+    }
+  }
 
   const loadArtistSongs = useCallback(async () => {
     if (!token || user?.role !== 'artist') {
@@ -976,6 +1052,269 @@ export const ArtistStudioPage: React.FC<ArtistStudioPageProps> = ({ onNavigateTa
               })}
             </div>
           )}
+        </section>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 4: ARTIST VAULT & MOMO PAYOUTS                        */}
+      {/* ========================================================= */}
+      {activeTab === 'vault' && (
+        <section className="space-y-6">
+          {/* Vault Balance Card */}
+          <div className="p-6 rounded-3xl bg-gradient-to-br from-[#162018] via-[#121212] to-[#1F1A0E] border border-[#FACC15]/40 shadow-2xl space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#FACC15]">
+                  Artist Vault & Ledger
+                </div>
+                <h2 className="text-xl font-black text-white">Your Tip Earnings</h2>
+              </div>
+              <button
+                type="button"
+                onClick={loadArtistVault}
+                disabled={loadingVault}
+                className="px-3.5 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-xs font-bold text-neutral-200 cursor-pointer disabled:opacity-50"
+              >
+                {loadingVault ? 'Refreshing...' : '↻ Refresh Balance'}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="p-4 rounded-2xl bg-black/50 border border-[#FACC15]/40">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                  Available Balance
+                </div>
+                <div className="text-2xl sm:text-3xl font-black font-mono text-[#FACC15] mt-1">
+                  {(vault?.available_balance_xaf ?? 0).toLocaleString()} <span className="text-sm">XAF</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-black/40 border border-neutral-800">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                  Total Earned
+                </div>
+                <div className="text-xl sm:text-2xl font-black font-mono text-emerald-400 mt-1">
+                  {(vault?.total_earned_xaf ?? 0).toLocaleString()} <span className="text-xs">XAF</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-black/40 border border-neutral-800">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                  Total Withdrawn
+                </div>
+                <div className="text-xl sm:text-2xl font-black font-mono text-neutral-200 mt-1">
+                  {(vault?.total_withdrawn_xaf ?? 0).toLocaleString()} <span className="text-xs">XAF</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Withdraw to MoMo Form */}
+            <form
+              onSubmit={handleWithdraw}
+              className="lg:col-span-5 p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4"
+            >
+              <div>
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                  Withdraw to Mobile Money
+                </h3>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Instant Fapshi payout to your MTN MoMo or Orange Money number.
+                </p>
+              </div>
+
+              {/* Network Picker */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWithdrawMedium('mobile money')}
+                  className={`p-2.5 rounded-2xl border-2 text-left transition cursor-pointer flex items-center gap-2 ${
+                    withdrawMedium === 'mobile money'
+                      ? 'border-[#FFCC00] bg-[#FFCC00]/15'
+                      : 'border-neutral-800 bg-neutral-900/70'
+                  }`}
+                >
+                  <span className="w-7 h-7 rounded-lg bg-[#FFCC00] text-neutral-950 font-black text-[10px] flex items-center justify-center">
+                    MTN
+                  </span>
+                  <span className="text-xs font-bold text-white">MTN MoMo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setWithdrawMedium('orange money')}
+                  className={`p-2.5 rounded-2xl border-2 text-left transition cursor-pointer flex items-center gap-2 ${
+                    withdrawMedium === 'orange money'
+                      ? 'border-[#FF7900] bg-[#FF7900]/15'
+                      : 'border-neutral-800 bg-neutral-900/70'
+                  }`}
+                >
+                  <span className="w-7 h-7 rounded-lg bg-[#FF7900] text-white font-black text-[10px] flex items-center justify-center">
+                    OM
+                  </span>
+                  <span className="text-xs font-bold text-white">Orange Money</span>
+                </button>
+              </div>
+
+              {/* Amount Input */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <label className="font-bold text-neutral-300">Amount (XAF)</label>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setWithdrawAmount(
+                          String(Math.floor((vault?.available_balance_xaf ?? 0) / 2))
+                        )
+                      }
+                      className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-[10px] font-bold text-neutral-300 cursor-pointer"
+                    >
+                      50%
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setWithdrawAmount(String(vault?.available_balance_xaf ?? 0))
+                      }
+                      className="px-2 py-0.5 rounded bg-neutral-900 border border-neutral-700 text-[10px] font-bold text-[#FACC15] cursor-pointer"
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  min={100}
+                  max={Math.max(100, vault?.available_balance_xaf ?? 0)}
+                  value={withdrawAmount}
+                  onChange={(e) => setWithdrawAmount(e.target.value)}
+                  placeholder="Min 100 XAF"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-[#FACC15]"
+                />
+              </div>
+
+              {/* Phone Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-neutral-300">
+                  Registered +237 MoMo Number
+                </label>
+                <input
+                  type="tel"
+                  value={withdrawPhone}
+                  onChange={(e) => setWithdrawPhone(e.target.value)}
+                  placeholder="+237 670 000 000"
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-sm font-mono text-white focus:outline-none focus:border-[#536D56]"
+                />
+              </div>
+
+              {withdrawError && (
+                <div className="p-3 rounded-2xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs">
+                  ⚠️ {withdrawError}
+                </div>
+              )}
+
+              {withdrawSuccess && (
+                <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs">
+                  ✓ {withdrawSuccess}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={withdrawing || (vault?.available_balance_xaf ?? 0) < 100}
+                className="w-full py-3.5 rounded-2xl bg-[#FACC15] hover:bg-[#fde047] text-neutral-950 font-black text-xs uppercase tracking-wider shadow-lg transition cursor-pointer disabled:opacity-45"
+              >
+                {withdrawing ? 'Processing Payout...' : 'Withdraw to Mobile Money'}
+              </button>
+            </form>
+
+            {/* Vault Ledger History */}
+            <div className="lg:col-span-7 p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                  Vault Ledger History
+                </h3>
+                <span className="text-[11px] font-mono text-neutral-400">
+                  {vault?.ledger?.length ?? 0} entries
+                </span>
+              </div>
+
+              {!vault || vault.ledger.length === 0 ? (
+                <div className="py-12 text-center text-xs text-neutral-400 space-y-1">
+                  <div className="text-2xl">🪙</div>
+                  <p className="font-bold text-white">No vault transactions yet</p>
+                  <p>Tips from fans and your MoMo withdrawals will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  {vault.ledger.map((entry) => {
+                    const isCredit = entry.entry_type === 'credit_tip' || entry.entry_type === 'credit_refund'
+                    const label =
+                      entry.entry_type === 'credit_tip'
+                        ? 'Fan Tip Credited'
+                        : entry.entry_type === 'credit_refund'
+                        ? 'Payout Refunded'
+                        : 'MoMo Withdrawal'
+                    const matchedTx = vault.transactions.find(
+                      (tx) => tx.id === entry.transaction_id
+                    )
+
+                    return (
+                      <div
+                        key={entry.id}
+                        className="p-3.5 rounded-2xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between gap-3"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black shrink-0 ${
+                              isCredit
+                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                            }`}
+                          >
+                            {isCredit ? '↓' : '↑'}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-white truncate">{label}</div>
+                            <div className="text-[10px] text-neutral-400 flex items-center gap-2 mt-0.5">
+                              <span>
+                                {entry.created_at
+                                  ? new Date(entry.created_at).toLocaleString()
+                                  : 'Just now'}
+                              </span>
+                              {matchedTx?.medium && (
+                                <span className="capitalize text-neutral-300">
+                                  · {matchedTx.medium}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div
+                            className={`text-sm font-black font-mono ${
+                              isCredit ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
+                          >
+                            {isCredit ? '+' : '-'}
+                            {Number(entry.amount_xaf || 0).toLocaleString()} XAF
+                          </div>
+                          {matchedTx?.status && (
+                            <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 uppercase mt-0.5">
+                              {matchedTx.status}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </section>
       )}
     </div>

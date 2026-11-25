@@ -570,6 +570,42 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     activeBlock?.dialogueA || captionA || (!activeBlock?.dialogueB ? caption : undefined)
   const dialogueB: string | undefined = activeBlock?.dialogueB || captionB
 
+  // Build normalized scene character list (supports 1, 2, 3, or 4+ characters)
+  const sceneCharacters = useMemo(() => {
+    if (activeBlock?.characters && activeBlock.characters.length > 0) {
+      const total = activeBlock.characters.length
+      return activeBlock.characters.map((ch, idx) => ({
+        id: normalizeComicCharacterId(ch.id),
+        expression: (ch.expression as ComicExpression) || 'happy',
+        dialogue: ch.dialogue || '',
+        flip: ch.flip !== undefined ? ch.flip : idx >= Math.ceil(total / 2) && total > 1,
+      }))
+    }
+
+    const list: {
+      id: ReturnType<typeof normalizeComicCharacterId>
+      expression: ComicExpression
+      dialogue: string
+      flip: boolean
+    }[] = [
+      {
+        id: normCharA,
+        expression: exprA,
+        dialogue: dialogueA || '',
+        flip: false,
+      },
+    ]
+    if (hasCharB && normCharB) {
+      list.push({
+        id: normCharB,
+        expression: exprB,
+        dialogue: dialogueB || '',
+        flip: true,
+      })
+    }
+    return list
+  }, [activeBlock, normCharA, normCharB, hasCharB, exprA, exprB, dialogueA, dialogueB])
+
   // Sound Effects (SFX) trigger once on block entry
   const lastPlayedSFXBlockRef = useRef<number | null>(null)
   useEffect(() => {
@@ -665,8 +701,8 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
         {/* 2. Scene Center Prop (SVG Overlay) */}
         <ScenePropOverlay prop={activeProp} />
 
-        {/* 3. Top Centered Mini Pill (Scene + Cast + BPM) */}
-        <div className="hidden sm:flex absolute top-2 left-1/2 -translate-x-1/2 z-30 items-center gap-1.5 pointer-events-none">
+        {/* 3. Bottom Centered Mini Pill (Scene + BPM) — kept clear of top dialogue row */}
+        <div className="hidden sm:flex absolute bottom-2 left-1/2 -translate-x-1/2 z-30 items-center gap-1.5 pointer-events-none">
           <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10 shadow">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span>Scene {activeSceneIndex + 1}</span>
@@ -675,49 +711,87 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           </div>
         </div>
 
-        {/* 4. Comic Speech Dialogue A: Top-Left (Tail pointing down-left toward Character A) */}
-        {dialogueA && dialogueA.trim().length > 0 && (
-          <motion.div
-            key={`dlgA-${activeSceneIndex}-${dialogueA}`}
-            initial={{ opacity: 0, scale: 0.78, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 24 }}
-            className="absolute top-3 left-3 max-w-[44%] z-20 flex flex-col items-start pointer-events-none"
-          >
-            <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-left tracking-tight leading-snug">
-              "{dialogueA}"
-              {/* Tail pointing down-left toward Character 1 */}
-              <svg className="absolute -bottom-2.5 left-4 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
-                <path d="M0 0 L16 0 L4 14 Z" />
-              </svg>
-              <svg className="absolute -bottom-2 left-[18px] w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
-                <path d="M0 0 L14 0 L3 12 Z" />
-              </svg>
-            </div>
-          </motion.div>
-        )}
+        {/* 4. Top Dialogue Zone (Supports 1, 2, or 3+ speaking characters, never covers faces) */}
+        {(() => {
+          const speakers = sceneCharacters
+            .map((ch, idx) => ({ ...ch, idx }))
+            .filter((ch) => ch.dialogue && ch.dialogue.trim().length > 0)
+          if (speakers.length === 0) return null
 
-        {/* 5. Comic Speech Dialogue B: Top-Right (Tail pointing down-right toward Character B) */}
-        {dialogueB && dialogueB.trim().length > 0 && (
-          <motion.div
-            key={`dlgB-${activeSceneIndex}-${dialogueB}`}
-            initial={{ opacity: 0, scale: 0.78, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 450, damping: 24, delay: 0.05 }}
-            className="absolute top-3 right-3 max-w-[44%] z-20 flex flex-col items-end pointer-events-none"
-          >
-            <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-right tracking-tight leading-snug">
-              "{dialogueB}"
-              {/* Tail pointing down-right toward Character 2 */}
-              <svg className="absolute -bottom-2.5 right-4 w-4 h-3.5 text-neutral-950 rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
-                <path d="M0 0 L16 0 L12 14 Z" />
-              </svg>
-              <svg className="absolute -bottom-2 right-[18px] w-3.5 h-3 text-white rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
-                <path d="M0 0 L14 0 L11 12 Z" />
-              </svg>
+          const totalChars = sceneCharacters.length
+          const singleSpeaker = speakers.length === 1
+          const twoSpeakers = speakers.length === 2
+
+          return (
+            <div className="absolute top-3 inset-x-3 z-20 flex items-start justify-between gap-2 pointer-events-none">
+              {speakers.map((sp, spIdx) => {
+                const isRightSide = sp.flip || (totalChars > 1 && sp.idx >= Math.ceil(totalChars / 2))
+                const widthClass = singleSpeaker
+                  ? `max-w-[75%] ${isRightSide ? 'ml-auto' : ''}`
+                  : twoSpeakers
+                  ? 'max-w-[47%]'
+                  : 'flex-1 min-w-0'
+                const textSizeClass =
+                  speakers.length >= 3
+                    ? 'text-xs sm:text-sm px-2.5 py-2'
+                    : 'text-sm sm:text-base px-3.5 py-2.5'
+
+                return (
+                  <motion.div
+                    key={`dlg-${activeSceneIndex}-${sp.idx}-${sp.dialogue}`}
+                    initial={{ opacity: 0, scale: 0.8, y: -6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 450, damping: 24, delay: spIdx * 0.04 }}
+                    className={`${widthClass} flex flex-col ${isRightSide ? 'items-end' : 'items-start'}`}
+                  >
+                    <div
+                      className={`relative bg-white text-zinc-900 font-extrabold leading-snug rounded-2xl border-2 border-zinc-900 shadow-md break-words ${textSizeClass} ${
+                        isRightSide ? 'text-right' : 'text-left'
+                      }`}
+                    >
+                      "{sp.dialogue}"
+                      {isRightSide ? (
+                        <>
+                          <svg
+                            className="absolute -bottom-2.5 right-4 w-4 h-3.5 text-zinc-900 rotate-[12deg] pointer-events-none"
+                            viewBox="0 0 16 14"
+                            fill="currentColor"
+                          >
+                            <path d="M0 0 L16 0 L12 14 Z" />
+                          </svg>
+                          <svg
+                            className="absolute -bottom-2 right-[18px] w-3.5 h-3 text-white rotate-[12deg] pointer-events-none"
+                            viewBox="0 0 14 12"
+                            fill="currentColor"
+                          >
+                            <path d="M0 0 L14 0 L11 12 Z" />
+                          </svg>
+                        </>
+                      ) : (
+                        <>
+                          <svg
+                            className="absolute -bottom-2.5 left-4 w-4 h-3.5 text-zinc-900 -rotate-[12deg] pointer-events-none"
+                            viewBox="0 0 16 14"
+                            fill="currentColor"
+                          >
+                            <path d="M0 0 L16 0 L4 14 Z" />
+                          </svg>
+                          <svg
+                            className="absolute -bottom-2 left-[18px] w-3.5 h-3 text-white -rotate-[12deg] pointer-events-none"
+                            viewBox="0 0 14 12"
+                            fill="currentColor"
+                          >
+                            <path d="M0 0 L14 0 L3 12 Z" />
+                          </svg>
+                        </>
+                      )}
+                    </div>
+                  </motion.div>
+                )
+              })}
             </div>
-          </motion.div>
-        )}
+          )
+        })()}
 
         {/* 6. Reaction Sticker: Bottom-Left (1.5s Auto-Fade) */}
         {visibleSticker && (
@@ -734,46 +808,73 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           </div>
         )}
 
-        {/* 7. Motion-Comic Character Stage: Crisp Pop-In on Scene Switch */}
-        <div className="absolute inset-0 z-10 flex items-end justify-center pt-12 pb-2 sm:pb-3 pointer-events-none overflow-hidden">
-          {/* CHARACTER 1 (Left side in 2-char mode, or centered in solo mode) */}
-          <motion.div
-            key={`charA-${activeSceneIndex}-${normCharA}-${exprA}`}
-            className={`absolute bottom-2 sm:bottom-3 flex items-end justify-center ${
-              hasCharB
-                ? 'left-[6%] sm:left-[12%] w-32 sm:w-44 md:w-52 h-[66%] sm:h-[74%]'
-                : 'left-1/2 -translate-x-1/2 w-40 sm:w-52 md:w-60 h-[70%] sm:h-[76%]'
-            }`}
-            initial={{ opacity: 0, scale: 0.84, y: 16 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 24 }}
-            style={{ transformOrigin: 'bottom center' }}
-          >
-            <ComicCharacter
-              characterId={normCharA}
-              expression={exprA}
-              flip={false}
-              className="w-full h-full"
-            />
-          </motion.div>
+        {/* 7. Lower Character Stage Zone: Supports 1, 2, 3, or 4+ characters cleanly below bubbles */}
+        <div className="absolute inset-0 z-10 flex items-end justify-center pt-24 sm:pt-28 pb-2 pointer-events-none overflow-hidden">
+          {sceneCharacters.length <= 2 ? (
+            <>
+              {/* 1 or 2 characters: classic left/right or solo center */}
+              <motion.div
+                key={`char-0-${activeSceneIndex}-${sceneCharacters[0].id}-${sceneCharacters[0].expression}`}
+                className={`absolute bottom-2 flex items-end justify-center ${
+                  sceneCharacters.length === 2
+                    ? 'left-[6%] sm:left-[12%] w-32 sm:w-44 md:w-52 h-[62%] sm:h-[66%]'
+                    : 'left-1/2 -translate-x-1/2 w-40 sm:w-52 md:w-60 h-[62%] sm:h-[66%]'
+                }`}
+                initial={{ opacity: 0, scale: 0.84, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                style={{ transformOrigin: 'bottom center' }}
+              >
+                <ComicCharacter
+                  characterId={sceneCharacters[0].id}
+                  expression={sceneCharacters[0].expression}
+                  flip={sceneCharacters[0].flip}
+                  className="w-full h-full"
+                />
+              </motion.div>
 
-          {/* CHARACTER 2 (Right side, mirrored via flip={true} to face Character 1) */}
-          {hasCharB && normCharB && (
-            <motion.div
-              key={`charB-${activeSceneIndex}-${normCharB}-${exprB}`}
-              className="absolute bottom-2 sm:bottom-3 right-[6%] sm:right-[12%] w-32 sm:w-44 md:w-52 h-[66%] sm:h-[74%] flex items-end justify-center"
-              initial={{ opacity: 0, scale: 0.84, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.04 }}
-              style={{ transformOrigin: 'bottom center' }}
-            >
-              <ComicCharacter
-                characterId={normCharB}
-                expression={exprB}
-                flip={true}
-                className="w-full h-full"
-              />
-            </motion.div>
+              {sceneCharacters.length === 2 && (
+                <motion.div
+                  key={`char-1-${activeSceneIndex}-${sceneCharacters[1].id}-${sceneCharacters[1].expression}`}
+                  className="absolute bottom-2 right-[6%] sm:right-[12%] w-32 sm:w-44 md:w-52 h-[62%] sm:h-[66%] flex items-end justify-center"
+                  initial={{ opacity: 0, scale: 0.84, y: 16 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.04 }}
+                  style={{ transformOrigin: 'bottom center' }}
+                >
+                  <ComicCharacter
+                    characterId={sceneCharacters[1].id}
+                    expression={sceneCharacters[1].expression}
+                    flip={sceneCharacters[1].flip}
+                    className="w-full h-full"
+                  />
+                </motion.div>
+              )}
+            </>
+          ) : (
+            <div className="w-full h-full flex items-end justify-around px-2 sm:px-4 gap-1">
+              {sceneCharacters.map((ch, idx) => (
+                <motion.div
+                  key={`char-${idx}-${activeSceneIndex}-${ch.id}-${ch.expression}`}
+                  className={`flex-1 flex items-end justify-center ${
+                    sceneCharacters.length >= 4
+                      ? 'max-w-[23%] h-[52%] sm:h-[58%]'
+                      : 'max-w-[29%] h-[58%] sm:h-[62%]'
+                  }`}
+                  initial={{ opacity: 0, scale: 0.84, y: 16 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24, delay: idx * 0.03 }}
+                  style={{ transformOrigin: 'bottom center' }}
+                >
+                  <ComicCharacter
+                    characterId={ch.id}
+                    expression={ch.expression}
+                    flip={ch.flip}
+                    className="w-full h-full"
+                  />
+                </motion.div>
+              ))}
+            </div>
           )}
         </div>
       </div>

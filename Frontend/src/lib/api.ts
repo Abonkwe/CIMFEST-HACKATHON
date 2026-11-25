@@ -6,8 +6,14 @@ import type {
   ArtistChallengePayload,
   ArtistProfile,
   ArtistSongInsight,
+  ArtistVaultResponse,
+  ArtistWithdrawPayload,
+  ArtistWithdrawResponse,
   Challenge,
   Creation,
+  FapshiDonatePayload,
+  FapshiDonateResponse,
+  FapshiStatusResponse,
   ReportPayload,
   Song,
   SongCreatePayload,
@@ -912,4 +918,64 @@ function getFallbackCreations(): Creation[] {
       },
     },
   ]
+}
+
+// =========================================================================
+// Fapshi Mobile Money Donations & Artist Vault Ledger
+// =========================================================================
+
+export async function donateViaFapshi(
+  payload: FapshiDonatePayload,
+  token: string
+): Promise<FapshiDonateResponse> {
+  const res = await fetch(`${API_BASE}/payments/fapshi/donate`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.detail || `Failed to initiate Mobile Money tip (HTTP ${res.status})`)
+  }
+  return data
+}
+
+export async function fetchFapshiPaymentStatus(
+  transactionId: string
+): Promise<FapshiStatusResponse> {
+  const res = await fetch(`${API_BASE}/payments/fapshi/status/${encodeURIComponent(transactionId)}`, {
+    headers: getHeaders(),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.detail || `Failed to check payment status (HTTP ${res.status})`)
+  }
+  return data
+}
+
+export async function fetchArtistVault(token: string): Promise<ArtistVaultResponse> {
+  const res = await fetch(`${API_BASE}/artists/me/vault`, {
+    headers: getHeaders(token),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.detail || `Failed to load Artist Vault (HTTP ${res.status})`)
+  }
+  return data
+}
+
+export async function withdrawFromArtistVault(
+  payload: ArtistWithdrawPayload,
+  token: string
+): Promise<ArtistWithdrawResponse> {
+  const res = await fetch(`${API_BASE}/artists/me/withdraw`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.detail || `Withdrawal failed (HTTP ${res.status})`)
+  }
+  return data
 }

@@ -165,6 +165,20 @@ export type ComicExpression =
   | 'shocked'
   | 'love'
   | 'confused'
+  | 'jealous'
+  | 'embarrassed'
+  | 'excited'
+  | 'suspicious'
+  | 'nervous'
+  | 'proud'
+  | 'bored'
+
+export interface SceneCharacter {
+  id: string
+  expression?: ComicExpression | string
+  dialogue?: string
+  flip?: boolean
+}
 
 export type StoryAction =
   | 'walk_in'
@@ -213,6 +227,7 @@ export interface MoveBlock {
   charB_expression?: ComicExpression | string
   charA_id?: string
   charB_id?: string | null
+  characters?: SceneCharacter[]
   bg?: StoryBackground | string
   bgMotion?: BgMotion
   prop?: StoryProp
@@ -248,6 +263,8 @@ export interface Creation {
   }
   song?: {
     id?: string
+    artist_id?: string
+    artist_name?: string
     title: string
     clip_url: string
     bpm: number
@@ -313,4 +330,82 @@ export interface UserProfileResponse {
   creations: Creation[]
   stats: UserProfileStats
   badges: ProfileBadge[]
+}
+
+export type FapshiMedium = 'mobile money' | 'orange money'
+
+export interface FapshiDonatePayload {
+  artist_id: string
+  creation_id?: string
+  amount_xaf: number
+  phone: string
+  medium: FapshiMedium
+}
+
+export interface FapshiDonateResponse {
+  transaction_id: string
+  fapshi_trans_id: string
+  status: string
+  net_amount_xaf?: number
+  demo?: boolean
+  message: string
+}
+
+export interface FapshiStatusResponse {
+  transaction_id: string
+  fapshi_trans_id?: string
+  status: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'EXPIRED' | string
+  gross_amount_xaf?: number
+  net_amount_xaf?: number
+}
+
+export interface LedgerEntry {
+  id: string
+  artist_id: string
+  transaction_id?: string | null
+  entry_type: 'credit_tip' | 'debit_withdrawal' | 'credit_refund' | string
+  amount_xaf: number
+  created_at?: string
+}
+
+export interface PaymentTransaction {
+  id: string
+  artist_id: string
+  creation_id?: string | null
+  direction: 'collection' | 'payout' | string
+  status: string
+  gross_amount_xaf: number
+  net_amount_xaf: number
+  phone?: string
+  medium?: string
+  fapshi_trans_id?: string
+  created_at?: string
+}
+
+export interface ArtistVaultResponse {
+  status: string
+  total_earned_xaf: number
+  total_withdrawn_xaf: number
+  available_balance_xaf: number
+  ledger: LedgerEntry[]
+  transactions: PaymentTransaction[]
+}
+
+export interface ArtistWithdrawPayload {
+  amount_xaf: number
+  phone?: string
+  medium: FapshiMedium
+}
+
+export interface ArtistWithdrawResponse {
+  status: string
+  transaction_id: string
+  fapshi_trans_id?: string
+  amount_xaf: number
+  phone: string
+  medium: string
+  total_earned_xaf: number
+  total_withdrawn_xaf: number
+  available_balance_xaf: number
+  message: string
 }

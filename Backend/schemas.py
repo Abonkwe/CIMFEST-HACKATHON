@@ -387,3 +387,38 @@ class ModerateRequest(BaseModel):
     )
     target_id: str = Field(..., description="UUID of the target entity to moderate")
     report_id: Optional[str] = Field(None, description="Optional ID of the report being resolved")
+
+
+class FapshiDonateRequest(BaseModel):
+    artist_id: str = Field(..., description="UUID of the artist receiving the tip")
+    creation_id: Optional[str] = Field(None, description="Optional creation UUID")
+    amount_xaf: int = Field(..., ge=100, description="Donation amount in XAF (>= 100)")
+    phone: str = Field(..., description="Fan Mobile Money phone number")
+    medium: str = Field("mobile money", description="Payment medium: 'mobile money' or 'orange money'")
+
+    @field_validator("artist_id", "phone", mode="before")
+    @classmethod
+    def strip_donate_fields(cls, v: Any) -> str:
+        return str(v or "").strip()
+
+    @field_validator("medium", mode="before")
+    @classmethod
+    def normalize_donate_medium(cls, v: Any) -> str:
+        lower = str(v or "mobile money").strip().lower()
+        if "orange" in lower or lower == "om":
+            return "orange money"
+        return "mobile money"
+
+
+class ArtistWithdrawRequest(BaseModel):
+    amount_xaf: int = Field(..., ge=100, le=500000, description="Withdrawal amount in XAF (100 to 500,000)")
+    phone: Optional[str] = Field(None, description="Optional +237 MoMo number (defaults to artist's phone)")
+    medium: str = Field("mobile money", description="Payout medium: 'mobile money' or 'orange money'")
+
+    @field_validator("medium", mode="before")
+    @classmethod
+    def normalize_withdraw_medium(cls, v: Any) -> str:
+        lower = str(v or "mobile money").strip().lower()
+        if "orange" in lower or lower == "om":
+            return "orange money"
+        return "mobile money"

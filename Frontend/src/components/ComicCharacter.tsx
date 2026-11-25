@@ -23,6 +23,13 @@ export const COMIC_EXPRESSIONS: {
   { id: 'shocked', label: 'Shocked', emoji: '😱', accent: '#A855F7' },
   { id: 'love', label: 'Love', emoji: '😍', accent: '#EC4899' },
   { id: 'confused', label: 'Confused', emoji: '🤨', accent: '#FB923C' },
+  { id: 'jealous', label: 'Jealous', emoji: '😒', accent: '#22C55E' },
+  { id: 'embarrassed', label: 'Embarrassed', emoji: '😳', accent: '#F472B6' },
+  { id: 'excited', label: 'Excited', emoji: '🤩', accent: '#EAB308' },
+  { id: 'suspicious', label: 'Suspicious', emoji: '🧐', accent: '#8B5CF6' },
+  { id: 'nervous', label: 'Nervous', emoji: '😬', accent: '#06B6D4' },
+  { id: 'proud', label: 'Proud', emoji: '😎', accent: '#F59E0B' },
+  { id: 'bored', label: 'Bored', emoji: '🥱', accent: '#94A3B8' },
 ]
 
 export function normalizeComicCharacterId(rawId?: string | null): ComicCharacterId {
@@ -39,6 +46,7 @@ export function normalizeComicCharacterId(rawId?: string | null): ComicCharacter
 
 export function normalizeExpression(raw?: string | null): ComicExpression {
   const lower = (raw || 'happy').toLowerCase().trim()
+  if (lower === 'embarassed') return 'embarrassed'
   const valid: ComicExpression[] = [
     'happy',
     'laughing',
@@ -47,6 +55,13 @@ export function normalizeExpression(raw?: string | null): ComicExpression {
     'shocked',
     'love',
     'confused',
+    'jealous',
+    'embarrassed',
+    'excited',
+    'suspicious',
+    'nervous',
+    'proud',
+    'bored',
   ]
   if (valid.includes(lower as ComicExpression)) {
     return lower as ComicExpression
@@ -590,6 +605,125 @@ export const ComicCharacter: React.FC<ComicCharacterProps> = ({
                   ?
                 </text>
               </g>
+            </g>
+          )}
+
+          {expr === 'jealous' && (
+            <g>
+              {/* Furrowed Envy Brows */}
+              <path d="M118 124 L148 130" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              <path d="M172 126 Q188 118 202 126" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Narrowed Side-Glance Eyes */}
+              <rect x="122" y="138" width="24" height="12" rx="6" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="140" cy="144" r="4.5" fill={INK} />
+              <rect x="174" y="138" width="24" height="12" rx="6" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="192" cy="144" r="4.5" fill={INK} />
+              {/* Tight Pursed Envy Mouth */}
+              <path d="M138 184 Q152 178 164 185 Q176 188 184 180" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Green Envy Aura Mark */}
+              <path d="M224 114 L234 104 M230 124 L242 120" stroke="#22C55E" strokeWidth="4" strokeLinecap="round" />
+            </g>
+          )}
+
+          {expr === 'embarrassed' && (
+            <g>
+              {/* Shy Tilted Brows */}
+              <path d="M118 128 Q134 120 146 116" fill="none" stroke={INK} strokeWidth="4" strokeLinecap="round" />
+              <path d="M202 128 Q186 120 174 116" fill="none" stroke={INK} strokeWidth="4" strokeLinecap="round" />
+              {/* Shy Averted Eyes */}
+              <ellipse cx="134" cy="144" rx="10" ry="11" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="139" cy="146" r="5" fill={INK} />
+              <ellipse cx="186" cy="144" rx="10" ry="11" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="191" cy="146" r="5" fill={INK} />
+              {/* Bright Rosy Blush + Comic Hatch Lines */}
+              <ellipse cx="116" cy="166" rx="12" ry="7" fill="#F472B6" opacity="0.75" />
+              <ellipse cx="204" cy="166" rx="12" ry="7" fill="#F472B6" opacity="0.75" />
+              <path d="M110 169 L114 163 M117 169 L121 163 M199 169 L203 163 M206 169 L210 163" stroke="#BE185D" strokeWidth="2" strokeLinecap="round" />
+              {/* Sheepish Wavy Smile */}
+              <path d="M140 184 Q150 192 160 184 Q170 192 180 184" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Small Sweat Drop */}
+              <path d="M232 120 C227 130 227 138 232 138 C237 138 237 130 232 120 Z" fill="#38BDF8" stroke={INK} strokeWidth="2.5" />
+            </g>
+          )}
+
+          {expr === 'excited' && (
+            <g>
+              {/* High Excited Brows */}
+              <path d="M118 114 Q134 104 148 114" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              <path d="M172 114 Q186 104 202 114" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Sparkling Star-Burst Eyes */}
+              <circle cx="134" cy="144" r="13" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <polygon points="134,134 137,141 144,144 137,147 134,154 131,147 124,144 131,141" fill="#FACC15" stroke={INK} strokeWidth="1.5" />
+              <circle cx="186" cy="144" r="13" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <polygon points="186,134 189,141 196,144 189,147 186,154 183,147 176,144 183,141" fill="#FACC15" stroke={INK} strokeWidth="1.5" />
+              {/* Huge Beaming Smile */}
+              <path d="M130 174 Q160 208 190 174 Z" fill="#FFFFFF" stroke={INK} strokeWidth="4.5" strokeLinejoin="round" />
+              {/* Golden Excitement Rays */}
+              <path d="M76 116 L90 124 M74 138 L88 138 M244 116 L230 124 M246 138 L232 138" stroke="#FACC15" strokeWidth="4.5" strokeLinecap="round" />
+            </g>
+          )}
+
+          {expr === 'suspicious' && (
+            <g>
+              {/* One Sharp Raised Brow, One Flat Low Brow */}
+              <path d="M118 118 Q134 108 148 122" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              <path d="M172 130 L202 128" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              {/* Half-Lidded Squinting Eyes */}
+              <path d="M122 142 L146 142 Q146 153 134 153 Q122 153 122 142 Z" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="139" cy="146" r="4" fill={INK} />
+              <path d="M174 142 L198 142 Q198 153 186 153 Q174 153 174 142 Z" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="191" cy="146" r="4" fill={INK} />
+              {/* Skeptical Sideways Mouth */}
+              <path d="M142 186 L180 182" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+            </g>
+          )}
+
+          {expr === 'nervous' && (
+            <g>
+              {/* Worried Raised Brows */}
+              <path d="M118 126 Q132 120 146 114" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              <path d="M202 126 Q188 120 174 114" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Wide Worried Eyes with Tiny Pupils */}
+              <circle cx="134" cy="144" r="12" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="134" cy="144" r="3.5" fill={INK} />
+              <circle cx="186" cy="144" r="12" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <circle cx="186" cy="144" r="3.5" fill={INK} />
+              {/* Wavy Chattering Mouth */}
+              <path d="M134 184 Q143 177 152 184 Q161 191 170 184 Q179 177 186 184" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Prominent Sweat Drop */}
+              <path d="M234 112 C227 125 227 136 234 136 C241 136 241 125 234 112 Z" fill="#38BDF8" stroke={INK} strokeWidth="3" />
+            </g>
+          )}
+
+          {expr === 'proud' && (
+            <g>
+              {/* Confident High Brows */}
+              <path d="M118 120 Q134 112 148 120" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              <path d="M172 120 Q186 112 202 120" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Confident Closed-Arc Smug Eyes */}
+              <path d="M122 144 Q134 136 146 144" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              <path d="M174 144 Q186 136 198 144" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              {/* Broad Confident Grin */}
+              <path d="M134 178 Q162 200 188 176" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
+              {/* Golden Shine Sparkle */}
+              <polygon points="236,104 239,112 247,115 239,118 236,126 233,118 225,115 233,112" fill="#FACC15" stroke={INK} strokeWidth="2" />
+            </g>
+          )}
+
+          {expr === 'bored' && (
+            <g>
+              {/* Flat Horizontal Brows */}
+              <path d="M120 128 L148 128" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              <path d="M172 128 L200 128" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
+              {/* Heavy Drooping Half-Closed Eyelids */}
+              <circle cx="134" cy="144" r="10" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <path d="M124 144 L144 144 L144 134 Q134 132 124 134 Z" fill={palette.skinShade} stroke={INK} strokeWidth="3.5" />
+              <circle cx="134" cy="148" r="3.5" fill={INK} />
+              <circle cx="186" cy="144" r="10" fill="#FFFFFF" stroke={INK} strokeWidth="4" />
+              <path d="M176 144 L196 144 L196 134 Q186 132 176 134 Z" fill={palette.skinShade} stroke={INK} strokeWidth="3.5" />
+              <circle cx="186" cy="148" r="3.5" fill={INK} />
+              {/* Flat Unimpressed / Small O Yawn Mouth */}
+              <ellipse cx="160" cy="186" rx="10" ry="6" fill="#7F1D1D" stroke={INK} strokeWidth="4" />
             </g>
           )}
         </g>

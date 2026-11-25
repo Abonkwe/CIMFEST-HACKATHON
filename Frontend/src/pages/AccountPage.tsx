@@ -2,9 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
-import { applyForArtist, fetchMyProfile } from '../lib/api'
+import { applyForArtist, fetchArtistVault, fetchMyProfile } from '../lib/api'
 import {
   CAMEROON_REGIONS,
+  type ArtistVaultResponse,
   type Creation,
   type ProfileBadge,
   type Song,
@@ -63,6 +64,7 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigateTab }) => {
   })
   const [profileBadges, setProfileBadges] = useState<ProfileBadge[]>([])
   const [profileLoading, setProfileLoading] = useState(false)
+  const [artistVault, setArtistVault] = useState<ArtistVaultResponse | null>(null)
 
   // Subtle footer toggle for Fan/Creator -> Artist upgrade
   const [showArtistApplyForm, setShowArtistApplyForm] = useState(false)
@@ -107,6 +109,23 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigateTab }) => {
       mounted = false
     }
   }, [token, refreshMe])
+
+  // Load Artist Vault summary when user is a verified artist
+  useEffect(() => {
+    if (!token || user?.role !== 'artist') {
+      setArtistVault(null)
+      return
+    }
+    let mounted = true
+    fetchArtistVault(token)
+      .then((data) => {
+        if (mounted) setArtistVault(data)
+      })
+      .catch(() => {})
+    return () => {
+      mounted = false
+    }
+  }, [token, user?.role])
 
   // Load Creator Profile Summary via GET /users/me/profile
   const loadCreatorProfile = useCallback(async () => {
@@ -549,6 +568,50 @@ export const AccountPage: React.FC<AccountPageProps> = ({ onNavigateTab }) => {
             >
               ↻ Check Verification Status
             </button>
+          </div>
+        </section>
+      )}
+
+      {/* ARTIST VAULT SUMMARY CARD (For Verified Artists) */}
+      {user?.role === 'artist' && (
+        <section className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#162018] via-[#121212] to-[#1F1A0E] border border-[#FACC15]/40 shadow-xl space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#FACC15]">
+                Artist Vault &amp; MoMo Payouts
+              </div>
+              <h3 className="text-lg font-black text-white">Your Fan Tip Earnings</h3>
+            </div>
+            {onNavigateTab && (
+              <button
+                type="button"
+                onClick={() => onNavigateTab('artist-studio')}
+                className="px-4 py-2 rounded-full bg-[#FACC15] hover:bg-[#fde047] text-neutral-950 font-black text-xs transition cursor-pointer shadow"
+              >
+                💰 Open Vault &amp; Withdraw →
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3.5 rounded-2xl bg-black/45 border border-[#FACC15]/30">
+              <div className="text-[10px] font-bold uppercase text-neutral-400">Available</div>
+              <div className="text-base sm:text-xl font-black font-mono text-[#FACC15] mt-0.5">
+                {(artistVault?.available_balance_xaf ?? 0).toLocaleString()} XAF
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-black/40 border border-neutral-800">
+              <div className="text-[10px] font-bold uppercase text-neutral-400">Earned</div>
+              <div className="text-base sm:text-xl font-black font-mono text-emerald-400 mt-0.5">
+                {(artistVault?.total_earned_xaf ?? 0).toLocaleString()} XAF
+              </div>
+            </div>
+            <div className="p-3.5 rounded-2xl bg-black/40 border border-neutral-800">
+              <div className="text-[10px] font-bold uppercase text-neutral-400">Withdrawn</div>
+              <div className="text-base sm:text-xl font-black font-mono text-neutral-200 mt-0.5">
+                {(artistVault?.total_withdrawn_xaf ?? 0).toLocaleString()} XAF
+              </div>
+            </div>
           </div>
         </section>
       )}

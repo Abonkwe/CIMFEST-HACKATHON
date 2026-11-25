@@ -5,6 +5,7 @@ import { fetchActiveChallenges, fetchFreshSongs, fetchTrendingSongs } from '../l
 import { useAudio } from '../context/AudioContext'
 import { useAuth } from '../context/AuthContext'
 import { useLanguage } from '../context/LanguageContext'
+import { FapshiDonateModal } from '../components/FapshiDonateModal'
 
 interface TrendingScreenProps {
   onNavigateTab: (tab: string) => void
@@ -23,6 +24,11 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
   const [selectedGenre, setSelectedGenre] = useState('All')
   const [loading, setLoading] = useState(true)
   const [countdown, setCountdown] = useState<string>('00:00:00')
+  const [tipTarget, setTipTarget] = useState<{
+    artistId: string
+    artistName: string
+    songTitle: string
+  } | null>(null)
 
   // Load active challenge and songs
   useEffect(() => {
@@ -337,6 +343,26 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
 
                     <button
                       type="button"
+                      onClick={() =>
+                        setTipTarget({
+                          artistId: song.artist_id,
+                          artistName:
+                            song.artist_name ||
+                            song.artist?.artist_profile?.artist_name ||
+                            song.artist?.display_name ||
+                            'Verified Artist',
+                          songTitle: song.title,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#FACC15]/15 hover:bg-[#FACC15]/25 text-[#FACC15] border border-[#FACC15]/40 text-[11px] font-bold transition cursor-pointer"
+                      title="Tip Artist via MTN MoMo / Orange Money"
+                    >
+                      <span>💛</span>
+                      <span className="hidden sm:inline">Tip</span>
+                    </button>
+
+                    <button
+                      type="button"
                       onClick={() => {
                         localStorage.setItem('beattoons_studio_song_id', song.id)
                         onNavigateTab('studio')
@@ -422,6 +448,16 @@ export const TrendingScreen: React.FC<TrendingScreenProps> = ({ onNavigateTab })
             {user ? 'Apply for Artist Badge →' : 'Create Artist Account'}
           </button>
         </div>
+      )}
+
+      {tipTarget && (
+        <FapshiDonateModal
+          isOpen={!!tipTarget}
+          onClose={() => setTipTarget(null)}
+          artistId={tipTarget.artistId}
+          artistName={tipTarget.artistName}
+          songTitle={tipTarget.songTitle}
+        />
       )}
     </div>
   )

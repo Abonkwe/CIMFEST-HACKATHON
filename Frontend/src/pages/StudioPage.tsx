@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import type { Challenge, ComicExpression, MoveBlock, StoryProp, StorySFX } from '../types'
+import type { Challenge, ComicExpression, MoveBlock, SceneCharacter, StoryProp, StorySFX } from '../types'
 import { fetchActiveChallenges, fetchTrendingSongs, submitCreation } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
+import { resolveClipUrl } from '../lib/audioUtils'
 import { StagePlayer } from '../components/StagePlayer'
 import { ComicCharacter, COMIC_EXPRESSIONS, expressionFromAction } from '../components/ComicCharacter'
 import {
@@ -87,7 +88,7 @@ function distributeCroppedWindowToScenes(
   scenes: MoveBlock[]
 ): MoveBlock[] {
   const count = scenes.length || 4
-  const duration = Math.max(end - start, 8)
+  const duration = Math.max(end - start, 1)
   const sceneLength = duration / count
   return scenes.map((scene, idx) => ({
     ...scene,
@@ -123,16 +124,24 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(KOCEE_DEMO_CHALLENGE)
   const [loading, setLoading] = useState(true)
 
-  // Full track duration derived from audio element or metadata
-  const fullSongDuration = Math.max(
-    audioDuration || 0,
-    selectedChallenge?.song?.duration_sec || 156
+  // Song duration read from <audio onLoadedMetadata={...}> (fallback to song.duration_sec || 30)
+  const [loadedSongDuration, setLoadedSongDuration] = useState<number | null>(null)
+  const songDuration = Math.max(
+    4,
+    Math.floor(
+      loadedSongDuration ||
+        (audioDuration && audioDuration > 0 ? audioDuration : 0) ||
+        selectedChallenge?.song?.duration_sec ||
+        30
+    )
   )
 
-  // In-Studio Song Section Cropper state (allows any 8s to 30s section of song)
-  // Default to the famous chorus of Kocee "We Di Go Na Go" (0:42 — 0:58 • 16s selected)
+  // Start Spot + Play Duration state (default 0:42 -> 0:58, 16s for Kocee)
   const [clipStart, setClipStart] = useState<number>(42)
   const [clipEnd, setClipEnd] = useState<number>(58)
+  const startSec = clipStart
+  const maxDuration = Math.max(4, Math.floor(songDuration - startSec))
+  const playDuration = Math.max(1, Math.min(Math.round(clipEnd - clipStart), maxDuration))
 
   // 2-Character Default Casting (per-scene cast overrides these cleanly)
   const [characterA, setCharacterA] = useState<'tantie' | 'mboa_boy' | 'pa_buea'>('mboa_boy')
@@ -361,45 +370,60 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
     setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clipStart, clipEnd, prev))
   }
 
-  // Quick duration preset (8s, 12s, 16s, 20s)
-  const handleDurationPreset = (presetSeconds: number) => {
-    let nextStart = clipStart
-    let nextEnd = nextStart + presetSeconds
-    if (nextEnd > fullSongDuration) {
-      nextEnd = fullSongDuration
-      nextStart = Math.max(0, nextEnd - presetSeconds)
+  // Start Spot change: clamps startSec to [0, songDuration - 4] and auto-reduces playDuration if near end
+  const handleStartSpotChange = (newStart: number) => {
+    const maxStart = Math.max(0, Math.floor(songDuration - 4))
+    const clampedStart = Math.max(0, Math.min(Math.round(newStart), maxStart))
+    const availMax = Math.max(4, Math.floor(songDuration - clampedStart))
+    const clampedDur = Math.min(playDuration, availMax)
+    const nextEnd = clampedStart + clampedDur
+
+    setClipStart(clampedStart)
+    setClipEnd(nextEnd)
+    setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clampedStart, nextEnd, prev))
+
+    if (currentTime < clampedStart || currentTime >= nextEnd) {
+      seek(clampedStart)
     }
-    handleCropChange(nextStart, nextEnd)
   }
 
-  // 1-Click Apply Story Template (automatically distributed over current cropped slice)
+  // Play Duration change: strictly caps startSec + playDuration <= songDuration
+  const handlePlayDurationChange = (newDur: number) => {
+    const availMax = Math.max(4, Math.floor(songDuration - startSec))
+    const sliderMax = Math.min(30, availMax)
+    const minDur = Math.min(4, sliderMax)
+    const clampedDur = Math.max(minDur, Math.min(Math.round(newDur), sliderMax))
+    const nextEnd = startSec + clampedDur
+
+    setClipEnd(nextEnd)
+    setTimelineBlocks((prev) => distributeCroppedWindowToScenes(startSec, nextEnd, prev))
+
+    if (currentTime < startSec || currentTime >= nextEnd) {
+      seek(startSec)
+    }
+  }
+
+  // 1-Click Apply Story Template (automatically distributed over current [startSec, clipEnd])
   const handleApplyTemplate = (template: StoryTemplate) => {
     setActiveTemplateId(template.id)
     setCharacterA(template.characterAId)
     setCharacterB(template.characterBId || 'none')
-    setTimelineBlocks(distributeCroppedWindowToScenes(clipStart, clipEnd, template.scenes))
+    setTimelineBlocks(distributeCroppedWindowToScenes(startSec, clipEnd, template.scenes))
     setActiveSceneIndex(0)
-    seek(clipStart)
+    seek(startSec)
   }
 
-  // Adjust song crop range (enforces 8s to 30s window, auto-divides across story scenes)
+  // Adjust song crop range (strictly enforces start + duration <= songDuration)
   const handleCropChange = (newStart: number, newEnd: number) => {
-    let clampedStart = Math.max(0, Math.min(newStart, fullSongDuration - 8))
-    let clampedEnd = Math.max(clampedStart + 8, Math.min(newEnd, fullSongDuration))
-
-    // Enforce max 30s section limit
-    if (clampedEnd - clampedStart > 30) {
-      if (newStart !== clipStart) {
-        clampedEnd = clampedStart + 30
-      } else {
-        clampedStart = clampedEnd - 30
-      }
-    }
+    const maxStart = Math.max(0, Math.floor(songDuration - 4))
+    const clampedStart = Math.max(0, Math.min(Math.round(newStart), maxStart))
+    const availMax = Math.max(4, Math.floor(songDuration - clampedStart))
+    const desiredDur = Math.min(30, Math.max(4, Math.round(newEnd - clampedStart)))
+    const clampedDur = Math.min(desiredDur, availMax)
+    const clampedEnd = clampedStart + clampedDur
 
     setClipStart(clampedStart)
     setClipEnd(clampedEnd)
-
-    // Automatically divide cropped window equally across story scenes
     setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clampedStart, clampedEnd, prev))
 
     if (currentTime < clampedStart || currentTime >= clampedEnd) {
@@ -744,6 +768,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                     (c) => c.song_id === e.target.value || c.id === e.target.value
                   )
                   if (found) {
+                    setLoadedSongDuration(null)
                     setSelectedChallenge(found)
                     if (found.song) {
                       const nextStart = found.song.id === KOCEE_DEMO_SONG.id ? 42 : 0
@@ -778,203 +803,186 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
             </div>
           </div>
 
-          {/* 1.5 Compact Song Section Cropper Bar (FR-20, FR-22) */}
-          <div className="p-4 sm:p-5 rounded-3xl bg-[#121212] border border-[#536D56]/50 shadow-xl space-y-3.5">
+          {/* 1.5 Simple Song Section Picker: Start Spot + Play Duration */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-[#121212] border border-[#536D56]/50 shadow-xl space-y-4">
+            {/* Hidden metadata reader so songDuration always reflects actual <audio> length */}
+            <audio
+              preload="metadata"
+              src={resolveClipUrl(selectedChallenge?.song?.clip_url || KOCEE_DEMO_SONG.clip_url)}
+              onLoadedMetadata={(e) => {
+                const dur = e.currentTarget.duration
+                if (dur && !isNaN(dur) && isFinite(dur) && dur > 0) {
+                  setLoadedSongDuration(dur)
+                  const maxStart = Math.max(0, Math.floor(dur - 4))
+                  const clampedStart = Math.min(startSec, maxStart)
+                  const availMax = Math.max(4, Math.floor(dur - clampedStart))
+                  if (clampedStart !== startSec || playDuration > availMax) {
+                    const nextDur = Math.min(playDuration, availMax)
+                    setClipStart(clampedStart)
+                    setClipEnd(clampedStart + nextDur)
+                    setTimelineBlocks((prev) =>
+                      distributeCroppedWindowToScenes(clampedStart, clampedStart + nextDur, prev)
+                    )
+                  }
+                }
+              }}
+              className="hidden"
+            />
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-base">✂️</span>
                 <span className="text-xs font-bold text-neutral-200 uppercase tracking-wider">
-                  Crop Song Section
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#536D56]/30 text-[#8FA993] border border-[#536D56]/50 font-semibold">
-                  Chorus / Slice
+                  Song Section Picker
                 </span>
               </div>
 
-              {/* Time window display (e.g. 0:42 — 0:58 • 16s selected) */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs sm:text-sm font-mono font-black text-[#FACC15] bg-neutral-900 px-3 py-1 rounded-xl border border-neutral-800 shadow-inner">
-                  {formatTime(clipStart)} — {formatTime(clipEnd)} • {Math.round(clipEnd - clipStart)}s selected
-                </span>
-              </div>
+              {/* Clear Range Badge: e.g. 0:32 → 0:48 (16s of 2:45) */}
+              <span className="text-xs sm:text-sm font-mono font-black text-[#FACC15] bg-neutral-900 px-3 py-1 rounded-xl border border-neutral-800 shadow-inner">
+                {formatTime(startSec)} → {formatTime(clipEnd)} ({playDuration}s of {formatTime(songDuration)})
+              </span>
             </div>
 
-            {/* Quick Duration & Song Section Presets */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-[10px] text-neutral-400 font-semibold mr-1">Duration:</span>
-              {[8, 12, 16, 20].map((sec) => {
-                const isDurActive = Math.round(clipEnd - clipStart) === sec
-                return (
-                  <motion.button
-                    key={sec}
-                    type="button"
-                    whileTap={{ scale: 0.92 }}
-                    onClick={() => handleDurationPreset(sec)}
-                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition cursor-pointer border ${
-                      isDurActive
-                        ? 'bg-[#FACC15] text-neutral-950 border-[#FACC15] shadow'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700'
-                    }`}
-                  >
-                    {sec}s
-                  </motion.button>
-                )
-              })}
-              <span className="text-[10px] text-neutral-500 mx-1">|</span>
-              {[
-                { label: '🔥 Chorus (Kocee)', start: 42, end: 58 },
-                { label: '⚡ Intro', start: 0, end: 16 },
-                { label: '🎶 Hook 2', start: 72, end: 92 },
-              ].map((p, pIdx) => {
-                const isActive = clipStart === p.start && clipEnd === p.end
-                return (
-                  <motion.button
-                    key={pIdx}
-                    type="button"
-                    whileTap={{ scale: 0.92 }}
-                    onClick={() => handleCropChange(p.start, p.end)}
-                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition cursor-pointer border ${
-                      isActive
-                        ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
-                    }`}
-                  >
-                    {p.label}
-                  </motion.button>
-                )
-              })}
-            </div>
+            {/* Visual Audio Waveform Preview */}
+            <div className="relative h-12 w-full bg-neutral-950/80 rounded-2xl p-2 flex items-center justify-between gap-1 overflow-hidden border border-neutral-800">
+              {WAVEFORM_BARS.map((height, i) => {
+                const barPct = (i / (WAVEFORM_BARS.length - 1)) * 100
+                const startPct = (startSec / songDuration) * 100
+                const endPct = (clipEnd / songDuration) * 100
+                const inWindow = barPct >= startPct && barPct <= endPct
 
-            {/* Visual Audio Waveform Scrubber */}
-            <div className="relative pt-2 pb-1">
-              {/* Waveform Bars Container */}
-              <div className="relative h-14 w-full bg-neutral-950/80 rounded-2xl p-2.5 flex items-center justify-between gap-1 overflow-hidden border border-neutral-800">
-                {WAVEFORM_BARS.map((height, i) => {
-                  const barPct = (i / (WAVEFORM_BARS.length - 1)) * 100
-                  const startPct = (clipStart / fullSongDuration) * 100
-                  const endPct = (clipEnd / fullSongDuration) * 100
-                  const inWindow = barPct >= startPct && barPct <= endPct
-
-                  return (
+                return (
+                  <div key={i} className="flex-1 flex items-center justify-center h-full">
                     <div
-                      key={i}
-                      className="flex-1 flex items-center justify-center h-full"
+                      className={`w-full max-w-[4px] rounded-full transition-all duration-150 ${
+                        inWindow
+                          ? 'bg-gradient-to-t from-[#536D56] via-[#FACC15] to-[#F43F5E] opacity-95'
+                          : 'bg-neutral-700 opacity-25'
+                      }`}
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                )
+              })}
+
+              <div
+                className="absolute top-0 bottom-0 left-0 bg-black/55 pointer-events-none transition-all duration-75"
+                style={{ width: `${Math.min(100, (startSec / songDuration) * 100)}%` }}
+              />
+              <div
+                className="absolute top-0 bottom-0 right-0 bg-black/55 pointer-events-none transition-all duration-75"
+                style={{ width: `${Math.max(0, 100 - (clipEnd / songDuration) * 100)}%` }}
+              />
+              {currentTime >= 0 && (
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-[#FACC15] shadow-[0_0_8px_#FACC15] pointer-events-none z-20"
+                  style={{ left: `${Math.min(100, Math.max(0, (currentTime / songDuration) * 100))}%` }}
+                />
+              )}
+            </div>
+
+            {/* Control 1: Start Spot (startSec) */}
+            <div className="p-3 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
+                  <span className="text-emerald-400">▶</span>
+                  <span>1. Start Spot</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleStartSpotChange(startSec - 1)}
+                    className="px-2 py-0.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[10px] font-bold text-neutral-300 border border-neutral-700 cursor-pointer"
+                  >
+                    -1s
+                  </button>
+                  <span className="text-xs font-mono font-black text-emerald-400 bg-neutral-900 px-2.5 py-0.5 rounded-lg border border-neutral-800">
+                    Start at {formatTime(startSec)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleStartSpotChange(startSec + 1)}
+                    className="px-2 py-0.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[10px] font-bold text-neutral-300 border border-neutral-700 cursor-pointer"
+                  >
+                    +1s
+                  </button>
+                </div>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(0, songDuration - 4)}
+                step={1}
+                value={startSec}
+                onChange={(e) => handleStartSpotChange(parseFloat(e.target.value))}
+                className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+              />
+            </div>
+
+            {/* Control 2: Play Duration (playDuration) */}
+            <div className="p-3 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
+                  <span className="text-[#F43F5E]">⏱</span>
+                  <span>2. Play Duration</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={Math.min(4, maxDuration)}
+                    max={Math.min(30, maxDuration)}
+                    value={playDuration}
+                    onChange={(e) => handlePlayDurationChange(parseInt(e.target.value, 10) || 4)}
+                    className="w-14 text-center text-xs font-mono font-black text-[#FACC15] bg-neutral-900 px-2 py-0.5 rounded-lg border border-neutral-700 focus:outline-none focus:border-[#FACC15]"
+                  />
+                  <span className="text-[10px] text-neutral-400 font-mono">
+                    sec (max {Math.min(30, maxDuration)}s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Duration Pills */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {[8, 12, 16, 20, 25, 30].map((sec) => {
+                  const isDisabled = sec > maxDuration
+                  const isActive = playDuration === sec
+                  return (
+                    <motion.button
+                      key={sec}
+                      type="button"
+                      disabled={isDisabled}
+                      whileTap={{ scale: 0.92 }}
+                      onClick={() => handlePlayDurationChange(sec)}
+                      className={`text-[11px] px-3 py-1 rounded-full font-bold transition border ${
+                        isActive
+                          ? 'bg-[#FACC15] text-neutral-950 border-[#FACC15] shadow cursor-pointer'
+                          : isDisabled
+                          ? 'bg-neutral-900/40 text-neutral-600 border-neutral-800/60 cursor-not-allowed'
+                          : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700 cursor-pointer'
+                      }`}
                     >
-                      <div
-                        className={`w-full max-w-[4px] rounded-full transition-all duration-150 ${
-                          inWindow
-                            ? 'bg-gradient-to-t from-[#536D56] via-[#FACC15] to-[#F43F5E] opacity-95 shadow-[0_0_6px_rgba(250,204,21,0.4)]'
-                            : 'bg-neutral-700 opacity-25'
-                        }`}
-                        style={{ height: `${height}%` }}
-                      />
-                    </div>
+                      {sec}s
+                    </motion.button>
                   )
                 })}
-
-                {/* Shaded Left Inactive Region */}
-                <div
-                  className="absolute top-0 bottom-0 left-0 bg-black/60 pointer-events-none transition-all duration-75"
-                  style={{ width: `${(clipStart / fullSongDuration) * 100}%` }}
-                />
-
-                {/* Shaded Right Inactive Region */}
-                <div
-                  className="absolute top-0 bottom-0 right-0 bg-black/60 pointer-events-none transition-all duration-75"
-                  style={{ width: `${100 - (clipEnd / fullSongDuration) * 100}%` }}
-                />
-
-                {/* Live Playhead Needle Marker */}
-                {currentTime >= 0 && (
-                  <div
-                    className="absolute top-0 bottom-0 w-0.5 bg-[#FACC15] shadow-[0_0_8px_#FACC15] pointer-events-none z-20 transition-all duration-75"
-                    style={{ left: `${Math.min(100, Math.max(0, (currentTime / fullSongDuration) * 100))}%` }}
-                  />
-                )}
               </div>
 
-              {/* Cropper Sliders Container */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3">
-                {/* Start Time Slider */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-neutral-300">
-                    <span className="font-bold flex items-center gap-1 text-[#8FA993]">
-                      <span>▶</span> Start Cut:
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleCropChange(clipStart - 1, clipEnd)}
-                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
-                      >
-                        -1s
-                      </button>
-                      <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-                        {formatTime(clipStart)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCropChange(clipStart + 1, clipEnd)}
-                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
-                      >
-                        +1s
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={Math.max(0, clipEnd - 8)}
-                    step={1}
-                    value={clipStart}
-                    onChange={(e) => handleCropChange(parseFloat(e.target.value), clipEnd)}
-                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#536D56]"
-                  />
-                </div>
-
-                {/* End Time Slider */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-mono text-neutral-300">
-                    <span className="font-bold flex items-center gap-1 text-[#F43F5E]">
-                      <span>⏹</span> End Cut:
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleCropChange(clipStart, clipEnd - 1)}
-                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
-                      >
-                        -1s
-                      </button>
-                      <span className="font-bold text-white bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
-                        {formatTime(clipEnd)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCropChange(clipStart, clipEnd + 1)}
-                        className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-[10px] text-neutral-300 border border-neutral-700 cursor-pointer"
-                      >
-                        +1s
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    type="range"
-                    min={clipStart + 8}
-                    max={Math.min(fullSongDuration, clipStart + 30)}
-                    step={1}
-                    value={clipEnd}
-                    onChange={(e) => handleCropChange(clipStart, parseFloat(e.target.value))}
-                    className="w-full h-1.5 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#F43F5E]"
-                  />
-                </div>
-              </div>
+              {/* Fine-tune Duration Slider */}
+              <input
+                type="range"
+                min={Math.min(4, maxDuration)}
+                max={Math.min(30, maxDuration)}
+                step={1}
+                value={playDuration}
+                onChange={(e) => handlePlayDurationChange(parseFloat(e.target.value))}
+                className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-[#F43F5E]"
+              />
             </div>
 
             {/* Preview Cut Action Bar */}
             <div className="flex items-center justify-between pt-1 border-t border-neutral-800/80">
               <span className="text-[10px] text-neutral-400">
-                Min 8s • Max 30s • Auto-divided into {timelineBlocks.length} scenes
+                Auto-divided evenly into {timelineBlocks.length} scenes ({(playDuration / Math.max(1, timelineBlocks.length)).toFixed(1)}s each)
               </span>
 
               <button
@@ -988,20 +996,80 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
             </div>
           </div>
 
-          {/* 2. Per-Scene Comic Editor (Cast, Expressions & Dialogue for Active Scene) */}
+          {/* 2. Per-Scene Comic Editor (Dynamic 1-6 Characters, Expressions & Dialogue) */}
           {(() => {
-            const sceneCharA = (activeScene.charA_id || characterA) as 'tantie' | 'mboa_boy' | 'pa_buea'
-            const sceneCharB =
-              activeScene.charB_id !== undefined
-                ? (activeScene.charB_id || 'none')
-                : characterB
-            const sceneExprA =
-              (activeScene.charA_expression as ComicExpression) ||
-              expressionFromAction(activeScene.charA_action || activeScene.action)
-            const sceneExprB =
-              (activeScene.charB_expression as ComicExpression) ||
-              expressionFromAction(activeScene.charB_action)
+            const getSceneCharacters = (): SceneCharacter[] => {
+              if (activeScene.characters && activeScene.characters.length > 0) {
+                return activeScene.characters
+              }
+              const list: SceneCharacter[] = [
+                {
+                  id: activeScene.charA_id || characterA,
+                  expression:
+                    (activeScene.charA_expression as ComicExpression) ||
+                    expressionFromAction(activeScene.charA_action || activeScene.action),
+                  dialogue: activeScene.dialogueA || '',
+                  flip: false,
+                },
+              ]
+              const charBVal =
+                activeScene.charB_id !== undefined ? activeScene.charB_id : characterB
+              if (charBVal && charBVal !== 'none') {
+                list.push({
+                  id: charBVal,
+                  expression:
+                    (activeScene.charB_expression as ComicExpression) ||
+                    expressionFromAction(activeScene.charB_action),
+                  dialogue: activeScene.dialogueB || '',
+                  flip: true,
+                })
+              }
+              return list
+            }
+
+            const sceneChars = getSceneCharacters()
             const sceneDuration = Math.max(0.5, Number((activeScene.end - activeScene.start).toFixed(1)))
+
+            const commitSceneCharacters = (nextChars: SceneCharacter[]) => {
+              const first = nextChars[0]
+              const second = nextChars[1]
+              if (first?.id) setCharacterA(first.id as 'tantie' | 'mboa_boy' | 'pa_buea')
+              setCharacterB((second?.id as 'tantie' | 'mboa_boy' | 'pa_buea') || 'none')
+
+              updateActiveScene({
+                characters: nextChars,
+                charA_id: first?.id || 'mboa_boy',
+                charB_id: second ? second.id : null,
+                charA_expression: first?.expression || 'happy',
+                charB_expression: second?.expression || 'happy',
+                dialogueA: first?.dialogue || '',
+                dialogueB: second ? second.dialogue || '' : '',
+                action: first?.expression || 'happy',
+              })
+            }
+
+            const handleAddCharacter = () => {
+              if (sceneChars.length >= 6) return
+              const nextIdx = sceneChars.length
+              const castCycle: ('mboa_boy' | 'tantie' | 'pa_buea')[] = ['mboa_boy', 'tantie', 'pa_buea']
+              const nextChar: SceneCharacter = {
+                id: castCycle[nextIdx % castCycle.length],
+                expression: 'happy',
+                dialogue: '',
+                flip: nextIdx >= 1,
+              }
+              commitSceneCharacters([...sceneChars, nextChar])
+            }
+
+            const handleRemoveCharacter = (idxToRemove: number) => {
+              if (sceneChars.length <= 1) return
+              commitSceneCharacters(sceneChars.filter((_, i) => i !== idxToRemove))
+            }
+
+            const updateCharacterAt = (idx: number, patch: Partial<SceneCharacter>) => {
+              const updated = sceneChars.map((ch, i) => (i === idx ? { ...ch, ...patch } : ch))
+              commitSceneCharacters(updated)
+            }
 
             return (
               <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-5">
@@ -1044,222 +1112,190 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                   </div>
                 </div>
 
-                {/* CHARACTER 1 (LEFT) */}
-                <div className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      Character 1 (Left)
+                {/* Number of Characters Control (1 to 6 characters) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-neutral-950/70 border border-neutral-800">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-[11px] font-bold text-neutral-300">
+                      Characters in Scene:
                     </span>
-                    <span className="text-[10px] text-neutral-400">
-                      Top-Left Speech Bubble
-                    </span>
-                  </div>
-
-                  {/* Character 1 Picker */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {CHARACTERS.map((char) => {
-                      const isSelected = sceneCharA === char.id
-                      return (
-                        <button
-                          key={char.id}
-                          type="button"
-                          onClick={() => {
-                            setCharacterA(char.id)
-                            updateActiveScene({ charA_id: char.id })
-                          }}
-                          className={`flex flex-col items-center text-center p-2 rounded-2xl border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
-                              : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                          }`}
-                        >
-                          <div className="w-11 h-11 rounded-full overflow-hidden mb-1">
-                            <CharacterAvatarCircle
-                              characterId={char.id}
-                              expression={isSelected ? sceneExprA : 'happy'}
-                            />
-                          </div>
-                          <span className="text-[11px] font-black text-white leading-tight">
-                            {char.displayName}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-
-                  {/* Character 1 Expression Picker */}
-                  <div className="space-y-1.5">
-                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                      Expression:
-                    </span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {COMIC_EXPRESSIONS.map((exp) => {
-                        const isSelected = sceneExprA === exp.id
-                        return (
-                          <motion.button
-                            key={exp.id}
-                            type="button"
-                            whileTap={{ scale: 0.92 }}
-                            onClick={() =>
-                              updateActiveScene({
-                                charA_expression: exp.id,
-                                action: exp.id,
-                              })
-                            }
-                            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
-                              isSelected
-                                ? 'bg-[#536D56] text-white border-[#F43F5E] shadow'
-                                : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                            }`}
-                          >
-                            <span>{exp.emoji}</span>
-                            <span>{exp.label}</span>
-                          </motion.button>
-                        )
-                      })}
+                    <div className="inline-flex items-center gap-1 bg-neutral-900 border border-neutral-700 rounded-full px-1.5 py-0.5">
+                      <button
+                        type="button"
+                        disabled={sceneChars.length <= 1}
+                        onClick={() => handleRemoveCharacter(sceneChars.length - 1)}
+                        className="w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-black flex items-center justify-center disabled:opacity-35 cursor-pointer"
+                        title="Remove last character"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-mono font-black text-[#FACC15] px-2">
+                        {sceneChars.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={sceneChars.length >= 6}
+                        onClick={handleAddCharacter}
+                        className="w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-black flex items-center justify-center disabled:opacity-35 cursor-pointer"
+                        title="Add character"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
 
-                  {/* Character 1 Comic Dialogue */}
-                  <div className="space-y-1.5">
-                    <input
-                      type="text"
-                      value={activeScene.dialogueA || ''}
-                      onChange={(e) => updateActiveScene({ dialogueA: e.target.value })}
-                      placeholder="Character 1 speech (EN / FR / Pidgin)..."
-                      maxLength={80}
-                      className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
-                    />
-                    <div className="flex flex-wrap gap-1">
-                      {COMIC_STARTER_CHIPS.map((chip) => (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => updateActiveScene({ dialogueA: chip })}
-                          className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 transition cursor-pointer"
-                        >
-                          {chip}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* CHARACTER 2 (RIGHT / OPTIONAL, MIRRORED) */}
-                <div className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-sky-400" />
-                      Character 2 (Right · Mirrored)
-                    </span>
-                    <span className="text-[10px] text-neutral-400">
-                      Top-Right Speech Bubble
-                    </span>
-                  </div>
-
-                  {/* Character 2 Picker */}
-                  <div className="grid grid-cols-4 gap-2">
+                  {sceneChars.length < 6 && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setCharacterB('none')
-                        updateActiveScene({ charB_id: null, dialogueB: '' })
-                      }}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl border text-center transition cursor-pointer ${
-                        sceneCharB === 'none'
-                          ? 'bg-neutral-800 border-[#F43F5E] text-[#F43F5E]'
-                          : 'bg-neutral-900/60 border-neutral-800 text-neutral-400'
-                      }`}
+                      onClick={handleAddCharacter}
+                      className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#536D56] hover:bg-[#607d64] text-white cursor-pointer shadow"
                     >
-                      <span className="text-lg mb-0.5">✖️</span>
-                      <span className="text-[10px] font-bold">Solo</span>
+                      + Add Character
                     </button>
-                    {CHARACTERS.map((char) => {
-                      const isSelected = sceneCharB === char.id
-                      return (
-                        <button
-                          key={char.id}
-                          type="button"
-                          onClick={() => {
-                            setCharacterB(char.id)
-                            updateActiveScene({ charB_id: char.id })
-                          }}
-                          className={`flex flex-col items-center text-center p-2 rounded-2xl border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
-                              : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                          }`}
-                        >
-                          <div className="w-10 h-10 rounded-full overflow-hidden mb-1">
-                            <CharacterAvatarCircle
-                              characterId={char.id}
-                              expression={isSelected ? sceneExprB : 'happy'}
-                            />
-                          </div>
-                          <span className="text-[10px] font-bold text-white truncate w-full">
-                            {char.displayName}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
+                  )}
+                </div>
 
-                  {sceneCharB !== 'none' && (
-                    <>
-                      {/* Character 2 Expression Picker */}
-                      <div className="space-y-1.5">
-                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
-                          Expression:
-                        </span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {COMIC_EXPRESSIONS.map((exp) => {
-                            const isSelected = sceneExprB === exp.id
-                            return (
-                              <motion.button
-                                key={exp.id}
+                {/* Per-Character Cards */}
+                <div className="space-y-4">
+                  {sceneChars.map((sc, cIdx) => {
+                    const charExpr = (sc.expression as ComicExpression) || 'happy'
+                    const badgeColors = [
+                      'text-emerald-400',
+                      'text-sky-400',
+                      'text-[#FACC15]',
+                      'text-pink-400',
+                      'text-purple-400',
+                      'text-orange-400',
+                    ]
+                    const dotColors = [
+                      'bg-emerald-400',
+                      'bg-sky-400',
+                      'bg-[#FACC15]',
+                      'bg-pink-400',
+                      'bg-purple-400',
+                      'bg-orange-400',
+                    ]
+
+                    return (
+                      <div
+                        key={cIdx}
+                        className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span
+                            className={`text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
+                              badgeColors[cIdx % badgeColors.length]
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${dotColors[cIdx % dotColors.length]}`}
+                            />
+                            Character {cIdx + 1}
+                          </span>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => updateCharacterAt(cIdx, { flip: !sc.flip })}
+                              className="text-[10px] px-2 py-0.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700 cursor-pointer"
+                              title="Flip character facing direction"
+                            >
+                              {sc.flip ? '⇄ Facing Left' : '⇄ Facing Right'}
+                            </button>
+                            {sceneChars.length > 1 && (
+                              <button
                                 type="button"
-                                whileTap={{ scale: 0.92 }}
-                                onClick={() => updateActiveScene({ charB_expression: exp.id })}
-                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                                onClick={() => handleRemoveCharacter(cIdx)}
+                                className="text-[10px] px-2 py-0.5 rounded-lg bg-red-950/50 hover:bg-red-900/60 text-red-300 border border-red-500/30 cursor-pointer"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Character Cast Picker */}
+                        <div className="grid grid-cols-3 gap-2">
+                          {CHARACTERS.map((char) => {
+                            const isSelected = sc.id === char.id
+                            return (
+                              <button
+                                key={char.id}
+                                type="button"
+                                onClick={() => updateCharacterAt(cIdx, { id: char.id })}
+                                className={`flex flex-col items-center text-center p-2 rounded-2xl border transition-all cursor-pointer ${
                                   isSelected
-                                    ? 'bg-[#536D56] text-white border-[#F43F5E] shadow'
-                                    : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                                    ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
+                                    : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
                                 }`}
                               >
-                                <span>{exp.emoji}</span>
-                                <span>{exp.label}</span>
-                              </motion.button>
+                                <div className="w-10 h-10 rounded-full overflow-hidden mb-1">
+                                  <CharacterAvatarCircle
+                                    characterId={char.id}
+                                    expression={isSelected ? charExpr : 'happy'}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-black text-white leading-tight">
+                                  {char.displayName}
+                                </span>
+                              </button>
                             )
                           })}
                         </div>
-                      </div>
 
-                      {/* Character 2 Comic Dialogue */}
-                      <div className="space-y-1.5">
-                        <input
-                          type="text"
-                          value={activeScene.dialogueB || ''}
-                          onChange={(e) => updateActiveScene({ dialogueB: e.target.value })}
-                          placeholder="Character 2 reply (EN / FR / Pidgin)..."
-                          maxLength={80}
-                          className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
-                        />
-                        <div className="flex flex-wrap gap-1">
-                          {COMIC_STARTER_CHIPS.map((chip) => (
-                            <button
-                              key={chip}
-                              type="button"
-                              onClick={() => updateActiveScene({ dialogueB: chip })}
-                              className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 transition cursor-pointer"
-                            >
-                              {chip}
-                            </button>
-                          ))}
+                        {/* Expression Picker (14 emotions) */}
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                            Expression:
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {COMIC_EXPRESSIONS.map((exp) => {
+                              const isSelected = charExpr === exp.id
+                              return (
+                                <motion.button
+                                  key={exp.id}
+                                  type="button"
+                                  whileTap={{ scale: 0.92 }}
+                                  onClick={() => updateCharacterAt(cIdx, { expression: exp.id })}
+                                  className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                                    isSelected
+                                      ? 'bg-[#536D56] text-white border-[#F43F5E] shadow'
+                                      : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                                  }`}
+                                >
+                                  <span>{exp.emoji}</span>
+                                  <span>{exp.label}</span>
+                                </motion.button>
+                              )
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Comic Dialogue */}
+                        <div className="space-y-1.5">
+                          <input
+                            type="text"
+                            value={sc.dialogue || ''}
+                            onChange={(e) => updateCharacterAt(cIdx, { dialogue: e.target.value })}
+                            placeholder={`Character ${cIdx + 1} speech (EN / FR / Pidgin)...`}
+                            maxLength={80}
+                            className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
+                          />
+                          <div className="flex flex-wrap gap-1">
+                            {COMIC_STARTER_CHIPS.map((chip) => (
+                              <button
+                                key={chip}
+                                type="button"
+                                onClick={() => updateCharacterAt(cIdx, { dialogue: chip })}
+                                className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 transition cursor-pointer"
+                              >
+                                {chip}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       </div>
-                    </>
-                  )}
+                    )
+                  })}
                 </div>
               </div>
             )
