@@ -98,6 +98,36 @@ export async function checkApiHealth(): Promise<{ status: string; service: strin
   return res.json()
 }
 
+export async function fetchAllSongs(): Promise<Song[]> {
+  const url = `${API_BASE}/songs`
+  return fetchWithSWR(url, async () => {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data) && data.length > 0) {
+          const hasKocee = data.some(
+            (s: Song) => s.id === KOCEE_DEMO_SONG.id || s.title === KOCEE_DEMO_SONG.title
+          )
+          return hasKocee ? data : [KOCEE_DEMO_SONG, ...data]
+        }
+      }
+    } catch {
+      // Fallback to trending + fresh
+    }
+    const [trending, fresh] = await Promise.all([fetchTrendingSongs(), fetchFreshSongs()])
+    const seen = new Set<string>()
+    const merged: Song[] = []
+    for (const s of [...trending, ...fresh]) {
+      if (!seen.has(s.id)) {
+        seen.add(s.id)
+        merged.push(s)
+      }
+    }
+    return merged
+  })
+}
+
 export async function fetchTrendingSongs(): Promise<Song[]> {
   const url = `${API_BASE}/songs/trending`
   return fetchWithSWR(url, async () => {
@@ -960,6 +990,26 @@ export async function fetchArtistVault(token: string): Promise<ArtistVaultRespon
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error(data?.detail || `Failed to load Artist Vault (HTTP ${res.status})`)
+  }
+  return data
+}
+
+export async function uploadCreationVideo(
+  file: File | Blob,
+  filename: string,
+  token: string
+): Promise<{ video_url: string }> {
+  const formData = new FormData()
+  formData.append('file', file, filename)
+
+  const res = await fetch(`${API_BASE}/creations/upload-video`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: formData,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data?.detail || `Video upload failed (HTTP ${res.status})`)
   }
   return data
 }

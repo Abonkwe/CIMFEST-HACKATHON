@@ -622,6 +622,31 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     }
   }, [isPlaying, activeBlock, activeSceneIndex])
 
+  // Video Entry (Dance Challenge / Music Cover) detection & <video> sync
+  const videoBlock = movesTimeline?.[0]?.type === 'video' ? movesTimeline[0] : null
+  const isVideoEntry = Boolean(videoBlock && videoBlock.video_url)
+  const isDanceVideo = videoBlock?.sub_type === 'dance'
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    const vid = videoRef.current
+    if (!isVideoEntry || !vid) return
+
+    if (isPlaying) {
+      if (isDanceVideo && audioElement && !audioElement.paused) {
+        const targetVidTime = Math.max(0, audioElement.currentTime - clipStart)
+        if (Math.abs(vid.currentTime - targetVidTime) > 0.6) {
+          try {
+            vid.currentTime = targetVidTime % (vid.duration || 30)
+          } catch {}
+        }
+      }
+      vid.play().catch(() => {})
+    } else {
+      vid.pause()
+    }
+  }, [isPlaying, isVideoEntry, isDanceVideo, audioElement, clipStart])
+
   // Render Background Environment
   const renderBackground = () => {
     switch (activeBg) {
@@ -665,7 +690,29 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
         }
       `}</style>
 
-      {/* Camera Pan/Zoom Stage Wrapper */}
+      {/* Camera Pan/Zoom Stage Wrapper (or Video Stage for Dance / Cover entries) */}
+      {isVideoEntry && videoBlock?.video_url ? (
+        <div
+          className="relative w-full h-full bg-black cursor-pointer"
+          onClick={() => {
+            if (mode === 'playback' && isPlaying && onTogglePlay) {
+              onTogglePlay()
+            }
+          }}
+        >
+          <video
+            ref={videoRef}
+            src={videoBlock.video_url}
+            playsInline
+            loop
+            muted={isDanceVideo}
+            className="w-full h-full object-cover"
+          />
+          <div className="hidden sm:flex absolute top-3 left-3 z-20 items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/65 backdrop-blur-md text-[10px] font-bold text-white border border-white/15 pointer-events-none">
+            <span>{isDanceVideo ? '💃 Dance Challenge' : '🎤 Music Cover'}</span>
+          </div>
+        </div>
+      ) : (
       <div
         className={`relative w-full h-full transition-transform duration-700 ease-out origin-center ${
           activeBgMotion === 'zoom_in' ? 'scale-[1.12]' : 'scale-100'
@@ -878,6 +925,7 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           )}
         </div>
       </div>
+      )}
 
       {/* 8. Playback Mode Click Overlay for Feed / Previews */}
       {mode === 'playback' && !isPlaying && (

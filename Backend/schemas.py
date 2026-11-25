@@ -1,6 +1,6 @@
 import re
 from typing import Any, Dict, List, Literal, Optional, Union
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 VALID_REGIONS = (
     "Southwest",
@@ -241,9 +241,11 @@ class ArtistChallengeCreate(BaseModel):
 
 
 class MoveBlock(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     start: float = Field(..., description="Start timestamp in seconds")
     end: float = Field(..., description="End timestamp in seconds")
-    action: str = Field(..., description="Dance action name e.g. sway, footwork, spin")
+    action: str = Field("dance", description="Dance action name e.g. sway, footwork, spin, or video sub_type")
 
 
 class CreationCreate(BaseModel):

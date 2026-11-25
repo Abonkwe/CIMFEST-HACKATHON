@@ -21,6 +21,31 @@ interface FeedScreenProps {
   onNavigateTab?: (tab: string, params?: { challenge_id?: string | null; song_id?: string | null }) => void
 }
 
+type FeedKindFilter = 'all' | 'comic' | 'dance' | 'cover'
+
+function getCreationKind(item: Creation): 'comic' | 'dance' | 'cover' {
+  const first = item.moves_timeline?.[0]
+  if (first?.type === 'video') {
+    return first.sub_type === 'cover' ? 'cover' : 'dance'
+  }
+  return 'comic'
+}
+
+const KIND_BADGE: Record<'comic' | 'dance' | 'cover', { label: string; cls: string }> = {
+  comic: {
+    label: 'Comic',
+    cls: 'bg-[#536D56]/25 text-[#8FA993] border-[#536D56]/50',
+  },
+  dance: {
+    label: 'Dance',
+    cls: 'bg-[#F43F5E]/20 text-[#FB7185] border-[#F43F5E]/40',
+  },
+  cover: {
+    label: 'Cover',
+    cls: 'bg-[#FACC15]/20 text-[#FACC15] border-[#FACC15]/40',
+  },
+}
+
 export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateTab }) => {
   const { user, token, openLoginModal } = useAuth()
   const { playSong, pauseSong, isPlaying, currentTime, audioElement } = useAudio()
@@ -33,7 +58,9 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
       : null)
 
   const [feedItems, setFeedItems] = useState<Creation[]>([])
+  const [feedFilter, setFeedFilter] = useState<FeedKindFilter>('all')
   const [activeCreationId, setActiveCreationId] = useState<string | null>(null)
+  const [playingCoverId, setPlayingCoverId] = useState<string | null>(null)
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null)
   const [mobileLeaderboardTab, setMobileLeaderboardTab] = useState<'top' | 'rising'>('top')
   const [mobileRankings, setMobileRankings] = useState<Creation[]>([])
@@ -169,29 +196,42 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
 
   // Handle Play Stage Preview & increment views (POST /creations/{id}/view, FR-29)
   const handlePlayPreview = async (creation: Creation) => {
-    if (activeCreationId === creation.id && isPlaying) {
-      pauseSong()
-      return
-    }
+    const kind = getCreationKind(creation)
 
-    setActiveCreationId(creation.id)
-    const clipUrl = creation.song?.clip_url || '/assets/audio/kocee_we_di_go_na_go.mp3'
-    const clipStart = creation.moves_timeline?.[0]?.start ?? 0
-    playSong(
-      {
-        id: creation.song?.id || creation.id,
-        artist_id: creation.creator_id,
-        title: creation.song?.title || 'We Di Go Na Go',
-        genre: creation.song?.genre || 'Afropop',
-        language: 'Cameroon',
-        clip_url: clipUrl,
-        duration_sec: (creation.song as any)?.duration_sec || 156,
-        bpm: creation.song?.bpm || 118,
-        status: 'trending',
-        trending_score: 95,
-      },
-      clipStart
-    )
+    if (kind === 'cover') {
+      if (playingCoverId === creation.id) {
+        setPlayingCoverId(null)
+        return
+      }
+      pauseSong()
+      setActiveCreationId(creation.id)
+      setPlayingCoverId(creation.id)
+    } else {
+      setPlayingCoverId(null)
+      if (activeCreationId === creation.id && isPlaying) {
+        pauseSong()
+        return
+      }
+
+      setActiveCreationId(creation.id)
+      const clipUrl = creation.song?.clip_url || '/assets/audio/kocee_we_di_go_na_go.mp3'
+      const clipStart = creation.moves_timeline?.[0]?.start ?? 0
+      playSong(
+        {
+          id: creation.song?.id || creation.id,
+          artist_id: creation.creator_id,
+          title: creation.song?.title || 'We Di Go Na Go',
+          genre: creation.song?.genre || 'Afropop',
+          language: 'Cameroon',
+          clip_url: clipUrl,
+          duration_sec: (creation.song as any)?.duration_sec || 156,
+          bpm: creation.song?.bpm || 118,
+          status: 'trending',
+          trending_score: 95,
+        },
+        clipStart
+      )
+    }
 
     try {
       const res = await recordCreationView(creation.id)
@@ -225,6 +265,34 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
           </div>
           <h2 className="text-2xl font-black text-white tracking-tight">{t('feedTitle')}</h2>
           <p className="text-xs text-neutral-400 mt-0.5">{t('feedSubtitle')}</p>
+        </div>
+
+        {/* Feed Type Filter Pills: All, Comics, Dance, Covers */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              { id: 'all', label: 'All' },
+              { id: 'comic', label: '🎨 Comics' },
+              { id: 'dance', label: '💃 Dance' },
+              { id: 'cover', label: '🎤 Covers' },
+            ] as const
+          ).map((pill) => {
+            const active = feedFilter === pill.id
+            return (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => setFeedFilter(pill.id)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition cursor-pointer ${
+                  active
+                    ? 'bg-white text-neutral-950 border-white shadow'
+                    : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                }`}
+              >
+                {pill.label}
+              </button>
+            )
+          })}
         </div>
       </div>
 
@@ -292,13 +360,17 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
         </div>
       ) : (
         <div className="space-y-6 max-w-3xl xl:max-w-4xl mx-auto">
-          {feedItems.map((item) => {
+          {feedItems
+            .filter((item) => feedFilter === 'all' || getCreationKind(item) === feedFilter)
+            .map((item) => {
             const hasVoted = votedIds.has(item.id)
             const isVotingThis = votingId === item.id
             const creatorName = item.creator?.display_name || item.creator_display_name || 'Kumba Dancer'
             const creatorRegion = item.creator?.region || item.creator_region || 'Southwest'
             const characterName = item.character_id || item.character || 'KmerBoy'
             const errorMsg = voteErrors[item.id]
+            const kind = getCreationKind(item)
+            const badge = KIND_BADGE[kind]
 
             return (
               <div
@@ -317,6 +389,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
                         {/* Region Pill */}
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 border border-neutral-700 text-[#8FA993] font-semibold shrink-0">
                           {creatorRegion} 🇨🇲
+                        </span>
+                        {/* Creation Type Badge (Comic / Dance / Cover) */}
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold shrink-0 ${badge.cls}`}>
+                          {badge.label}
                         </span>
                       </div>
                       <div className="text-[11px] text-neutral-400 truncate">
@@ -351,7 +427,10 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
 
                 {/* Reusable Animated StagePlayer in Playback Mode (FR-24) */}
                 {(() => {
-                  const isThisItemPlaying = activeCreationId === item.id && isPlaying
+                  const isThisItemPlaying =
+                    kind === 'cover'
+                      ? playingCoverId === item.id
+                      : activeCreationId === item.id && isPlaying && playingCoverId === null
                   const creationBpm = item.song?.bpm || 115
                   const themes: BackgroundTheme[] = ['sage_starburst', 'amber_sunset', 'slate_night', 'lavender_haze']
                   const bgTheme = themes[feedItems.indexOf(item) % themes.length]
@@ -594,8 +673,13 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateT
                         {index + 1}
                       </span>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">
-                          {c.creator_display_name || 'Creator'}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-white truncate">
+                            {c.creator_display_name || 'Creator'}
+                          </span>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold shrink-0 ${KIND_BADGE[getCreationKind(c)].cls}`}>
+                            {KIND_BADGE[getCreationKind(c)].label}
+                          </span>
                         </div>
                         <div className="text-[10px] text-neutral-400 truncate">
                           {c.creator_region || 'Cameroon'} 🇨🇲

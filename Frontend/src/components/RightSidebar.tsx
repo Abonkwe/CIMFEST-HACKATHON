@@ -289,11 +289,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                       </span>
 
                       <div className="min-w-0">
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold text-white truncate">
                             {c.creator_display_name || 'Creator'}
                           </span>
                           {isGold && <span className="text-xs">👑</span>}
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700 font-bold shrink-0">
+                            {c.moves_timeline?.[0]?.type === 'video'
+                              ? c.moves_timeline?.[0]?.sub_type === 'cover'
+                                ? 'Cover'
+                                : 'Dance'
+                              : 'Comic'}
+                          </span>
                         </div>
                         <div className="text-[10px] text-neutral-400 truncate">
                           {c.creator_region || 'Cameroon'} 🇨🇲 · {c.character_id || c.character || 'KmerBoy'}

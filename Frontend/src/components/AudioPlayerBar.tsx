@@ -1,11 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
+import { isSongOffline, removeSongOffline, saveSongOffline } from '../lib/offlineVault'
 
-export const AudioPlayerBar: React.FC = () => {
+interface AudioPlayerBarProps {
+  onNavigateTab?: (tab: string, params?: { challenge_id?: string | null; song_id?: string | null }) => void
+}
+
+export const AudioPlayerBar: React.FC<AudioPlayerBarProps> = ({ onNavigateTab }) => {
   const {
     currentSong,
     isPlaying,
+    isPlayingOffline,
     isPlayerVisible,
     togglePlay,
     pauseSong,
@@ -17,7 +23,46 @@ export const AudioPlayerBar: React.FC = () => {
   const { t } = useLanguage()
 
   const [isClosing, setIsClosing] = useState(false)
+  const [isSavedOffline, setIsSavedOffline] = useState(false)
+  const [savingOffline, setSavingOffline] = useState(false)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!currentSong?.id) {
+      setIsSavedOffline(false)
+      return
+    }
+    let mounted = true
+    const syncOffline = () => {
+      isSongOffline(currentSong.id).then((saved) => {
+        if (mounted) setIsSavedOffline(saved)
+      })
+    }
+    syncOffline()
+    window.addEventListener('beattoons-vault-updated', syncOffline)
+    return () => {
+      mounted = false
+      window.removeEventListener('beattoons-vault-updated', syncOffline)
+    }
+  }, [currentSong?.id])
+
+  const handleToggleSaveOffline = async () => {
+    if (!currentSong || savingOffline) return
+    setSavingOffline(true)
+    try {
+      if (isSavedOffline) {
+        await removeSongOffline(currentSong.id)
+        setIsSavedOffline(false)
+      } else {
+        await saveSongOffline(currentSong)
+        setIsSavedOffline(true)
+      }
+    } catch (err) {
+      console.warn('Offline save error:', err)
+    } finally {
+      setSavingOffline(false)
+    }
+  }
 
   // Clear pending close timer only on unmount
   useEffect(() => {
@@ -109,6 +154,11 @@ export const AudioPlayerBar: React.FC = () => {
                 <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[#536D56]/40 text-[#8FA993] border border-[#536D56]/50 shrink-0">
                   {currentSong.genre}
                 </span>
+                {isPlayingOffline && (
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shrink-0">
+                    🔒 Offline Vault • In-App Protected
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-1 text-[11px] text-neutral-400 truncate">
                 <span>{currentSong.artist_name || 'Verified Artist'}</span>
@@ -185,8 +235,42 @@ export const AudioPlayerBar: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Badges & Desktop Close Button (>= md) */}
-        <div className="hidden md:flex items-center justify-end gap-2.5 md:w-1/3 text-xs text-neutral-400">
+        {/* Right Actions: Save Offline, Challenge, Status & Close (>= md) */}
+        <div className="hidden md:flex items-center justify-end gap-2 md:w-1/3 text-xs text-neutral-400">
+          <button
+            type="button"
+            onClick={handleToggleSaveOffline}
+            disabled={savingOffline}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold transition cursor-pointer shrink-0 ${
+              isSavedOffline
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700'
+            }`}
+            title="Save for protected in-app offline listening only"
+          >
+            {savingOffline ? (
+              <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <span>{isSavedOffline ? '🔒' : '⬇'}</span>
+            )}
+            <span>{isSavedOffline ? 'Saved In-App' : 'Save Offline'}</span>
+          </button>
+
+          {onNavigateTab && (
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.setItem('beattoons_studio_song_id', currentSong.id)
+                onNavigateTab('studio', { song_id: currentSong.id })
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FACC15]/15 hover:bg-[#FACC15]/25 text-[#FACC15] border border-[#FACC15]/40 text-[11px] font-bold transition cursor-pointer shrink-0"
+              title="Enter a challenge with this track"
+            >
+              <span>🔥</span>
+              <span>Challenge</span>
+            </button>
+          )}
+
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] shrink-0 ${
               isPlaying
@@ -200,9 +284,6 @@ export const AudioPlayerBar: React.FC = () => {
               }`}
             />
             <span>{isPlaying ? 'Playing' : 'Paused'}</span>
-          </span>
-          <span className="text-[11px] text-neutral-400 bg-[#536D56]/20 border border-[#536D56]/40 px-2 py-0.5 rounded-full font-mono shrink-0">
-            {currentSong.language}
           </span>
           <button
             onClick={handleClose}

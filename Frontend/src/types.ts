@@ -145,6 +145,7 @@ export interface Song {
   id: string
   artist_id: string
   artist_name?: string
+  album_name?: string
   artist?: User & { artist_profile?: ArtistProfile }
   title: string
   genre: string
@@ -220,6 +221,10 @@ export interface MoveBlock {
   start: number
   end: number
   action: string
+  // Video entry metadata (Dance Challenge / Music Cover)
+  type?: 'comic' | 'video' | string
+  sub_type?: 'dance' | 'cover' | string
+  video_url?: string
   // Interactive storytelling scene metadata (backward-compatible)
   charA_action?: StoryAction | string
   charB_action?: StoryAction | string

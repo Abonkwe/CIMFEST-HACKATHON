@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import type { Challenge, ComicExpression, MoveBlock, SceneCharacter, StoryProp, StorySFX } from '../types'
-import { fetchActiveChallenges, fetchTrendingSongs, submitCreation } from '../lib/api'
+import { fetchActiveChallenges, fetchTrendingSongs, submitCreation, uploadCreationVideo } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { resolveClipUrl } from '../lib/audioUtils'
@@ -63,7 +63,7 @@ const CharacterAvatarCircle: React.FC<{
   characterId: string
   expression?: ComicExpression | string
 }> = ({ characterId, expression = 'happy' }) => {
-  return (
+    return (
     <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-neutral-700/50 to-neutral-800 flex items-end justify-center">
       <ComicCharacter
         characterId={characterId}
@@ -167,6 +167,38 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
   // Scrubber container ref for smooth seeking
   const scrubberRef = useRef<HTMLInputElement>(null)
 
+  // Additive Studio Mode: 'comic' (default) vs 'video' (Dance Challenge / Music Cover)
+  const [studioMode, setStudioMode] = useState<'comic' | 'video'>('comic')
+  const [entryType, setEntryType] = useState<'dance' | 'cover'>('dance')
+  const [videoBlob, setVideoBlob] = useState<Blob | null>(null)
+  const [videoFilename, setVideoFilename] = useState<string>('creation.webm')
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState<string | null>(null)
+  const [videoDurationSec, setVideoDurationSec] = useState<number>(16)
+  const [videoCaption, setVideoCaption] = useState<string>('')
+  const [videoError, setVideoError] = useState<string | null>(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordCountdown, setRecordCountdown] = useState<number>(0)
+  const [videoPreviewPlaying, setVideoPreviewPlaying] = useState(false)
+  const [uploadingVideo, setUploadingVideo] = useState(false)
+  const [videoSubmitSuccess, setVideoSubmitSuccess] = useState(false)
+
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Cleanup camera stream & preview object URL on unmount
+  useEffect(() => {
+      return () => {
+      if (countdownTimerRef.current) clearInterval(countdownTimerRef.current)
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop())
+      }
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl)
+    }
+  }, [videoPreviewUrl])
+
   // Load active challenges & songs on mount (StrictMode-safe: only locks after state updates)
   useEffect(() => {
     let mounted = true
@@ -247,7 +279,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
       }
     }
     initStudio()
-    return () => {
+      return () => {
       mounted = false
     }
   }, [loadSong])
@@ -522,6 +554,212 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
     }
   }
 
+  const handleStopRecording = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop()
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop())
+      mediaStreamRef.current = null
+    }
+    pauseSong()
+    setIsRecording(false)
+  }
+
+  const handleStartRecording = async () => {
+    setVideoError(null)
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVideoError('Camera recording is not supported in this browser. Please upload a video file instead.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' },
+        audio: entryType === 'cover',
+      })
+      mediaStreamRef.current = stream
+      if (cameraVideoRef.current) {
+        cameraVideoRef.current.srcObject = stream
+        cameraVideoRef.current.play().catch(() => {})
+      }
+
+      const chunks: BlobPart[] = []
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+        ? 'video/webm;codecs=vp8'
+        : MediaRecorder.isTypeSupported('video/webm')
+        ? 'video/webm'
+        : ''
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+      mediaRecorderRef.current = recorder
+
+      const maxSec = entryType === 'dance' ? playDuration : 30
+      const startedAt = Date.now()
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) chunks.push(ev.data)
+      }
+
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
+        if (blob.size > 25 * 1024 * 1024) {
+          setVideoError('Recorded video exceeds 25 MB. Try a shorter duration.')
+          return
+        }
+        const elapsed = Math.max(2, Math.min(30, Math.round((Date.now() - startedAt) / 1000)))
+        if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl)
+        const nextUrl = URL.createObjectURL(blob)
+        setVideoBlob(blob)
+        setVideoFilename(`beattoons_${entryType}_${Date.now()}.webm`)
+        setVideoPreviewUrl(nextUrl)
+        setVideoDurationSec(elapsed)
+        setVideoPreviewPlaying(false)
+      }
+
+      recorder.start(250)
+      setIsRecording(true)
+      setRecordCountdown(maxSec)
+
+      // In Dance Challenge mode, play the selected challenge song slice while recording
+      if (entryType === 'dance') {
+        const targetSong = selectedChallenge?.song || currentSong || KOCEE_DEMO_SONG
+        playSong(targetSong, startSec)
+      } else {
+        pauseSong()
+      }
+
+      countdownTimerRef.current = setInterval(() => {
+        setRecordCountdown((prev) => {
+          if (prev <= 1) {
+            handleStopRecording()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    } catch (err: any) {
+      setVideoError(err?.message || 'Camera permission denied or unavailable.')
+    }
+  }
+
+  const handleVideoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setVideoError(null)
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 25 * 1024 * 1024) {
+      setVideoError('Video file exceeds the 25 MB limit.')
+      return
+    }
+
+    const objUrl = URL.createObjectURL(file)
+    const probe = document.createElement('video')
+    probe.preload = 'metadata'
+    probe.src = objUrl
+    probe.onloadedmetadata = () => {
+      const dur = probe.duration
+      if (dur && !isNaN(dur) && isFinite(dur) && dur > 30.5) {
+        URL.revokeObjectURL(objUrl)
+        setVideoError(`Video is ${Math.round(dur)}s long. Maximum allowed duration is 30s.`)
+        return
+      }
+      if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl)
+      setVideoBlob(file)
+      setVideoFilename(file.name || 'upload.mp4')
+      setVideoPreviewUrl(objUrl)
+      setVideoDurationSec(dur && isFinite(dur) ? Math.max(2, Math.round(dur)) : playDuration)
+      setVideoPreviewPlaying(false)
+    }
+    probe.onerror = () => {
+      URL.revokeObjectURL(objUrl)
+      setVideoError('Could not read video file. Please use MP4, WebM, or MOV.')
+    }
+  }
+
+  const handleToggleVideoPreview = () => {
+    const vid = previewVideoRef.current
+    if (!vid) return
+
+    if (videoPreviewPlaying) {
+      vid.pause()
+      if (entryType === 'dance') pauseSong()
+      setVideoPreviewPlaying(false)
+    } else {
+      vid.currentTime = 0
+      vid.play().catch(() => {})
+      if (entryType === 'dance') {
+        const targetSong = selectedChallenge?.song || currentSong || KOCEE_DEMO_SONG
+        playSong(targetSong, startSec)
+      } else {
+        pauseSong()
+      }
+      setVideoPreviewPlaying(true)
+    }
+  }
+
+  const handleSubmitVideo = async () => {
+    setVideoError(null)
+    if (!user || !token) {
+      openLoginModal('Sign in to publish your Dance / Music Cover video')
+      return
+    }
+    if (!selectedChallenge) {
+      setVideoError('Please select an active challenge first.')
+      return
+    }
+    if (!videoBlob) {
+      setVideoError('Please record or upload a video first.')
+      return
+    }
+
+    setUploadingVideo(true)
+    try {
+      const { video_url } = await uploadCreationVideo(videoBlob, videoFilename, token)
+      const sliceStart = entryType === 'dance' ? startSec : 0
+      const sliceEnd =
+        entryType === 'dance'
+          ? startSec + playDuration
+          : Math.max(4, Math.min(30, videoDurationSec || 16))
+
+      await submitCreation(
+        {
+          challenge_id: selectedChallenge.id,
+          character_id: entryType === 'dance' ? 'dance_video' : 'cover_video',
+          moves_timeline: [
+            {
+              start: sliceStart,
+              end: sliceEnd,
+              action: entryType,
+              type: 'video',
+              sub_type: entryType,
+              video_url,
+            } as any,
+          ],
+          caption:
+            videoCaption.trim() ||
+            (entryType === 'dance'
+              ? 'Check out my Dance Challenge moves! 💃🔥'
+              : 'My Music Cover entry! 🎤🇨🇲'),
+        },
+        token
+      )
+
+      setVideoSubmitSuccess(true)
+      const submittedChallengeId = selectedChallenge.id
+      setTimeout(() => {
+        onNavigateTab('feed', { challenge_id: submittedChallengeId })
+      }, 1000)
+    } catch (err: any) {
+      setVideoError(err?.message || 'Failed to upload and submit video.')
+    } finally {
+      setUploadingVideo(false)
+    }
+  }
+
   return (
     <div className="space-y-6 w-full pb-24">
       {/* ========================================================= */}
@@ -563,6 +801,282 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
           </div>
         </div>
 
+        {/* 2-TAB STUDIO MODE SWITCHER: Comic Story (Default) vs Video (Dance / Music Cover) */}
+        <div className="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-[#121212] border border-[#536D56]/40 max-w-xl">
+          <button
+            type="button"
+            onClick={() => {
+              if (isRecording) handleStopRecording()
+              setStudioMode('comic')
+            }}
+            className={`py-2.5 px-4 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-2 ${
+              studioMode === 'comic'
+                ? 'bg-[#536D56] text-white shadow-md'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <span>🎨</span>
+            <span>Comic Story (No Camera)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setStudioMode('video')}
+            className={`py-2.5 px-4 rounded-xl text-xs font-black transition cursor-pointer flex items-center justify-center gap-2 ${
+              studioMode === 'video'
+                ? 'bg-gradient-to-r from-[#F43F5E] to-[#E11D48] text-white shadow-md'
+                : 'text-neutral-400 hover:text-white'
+            }`}
+          >
+            <span>🎥</span>
+            <span>Video (Dance / Music Cover)</span>
+          </button>
+        </div>
+      </div>
+
+        {studioMode === 'video' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* LEFT: Camera / Video Preview Stage */}
+            <div className="lg:col-span-6 space-y-4">
+              <div className="relative aspect-[16/10] w-full rounded-3xl overflow-hidden bg-black border border-[#536D56]/50 shadow-2xl flex items-center justify-center">
+                {isRecording ? (
+                  <>
+                    <video
+                      ref={cameraVideoRef}
+                      muted
+                      autoPlay
+                      playsInline
+                      className="w-full h-full object-cover -scale-x-100"
+                    />
+                    <div className="absolute top-3 left-3 z-20 px-3 py-1 rounded-full bg-red-600 text-white text-xs font-black flex items-center gap-2 shadow">
+                      <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                      <span>REC · {recordCountdown}s</span>
+                    </div>
+                  </>
+                ) : videoPreviewUrl ? (
+                  <>
+                    <video
+                      ref={previewVideoRef}
+                      src={videoPreviewUrl}
+                      playsInline
+                      loop
+                      muted={entryType === 'dance'}
+                      onClick={handleToggleVideoPreview}
+                      className="w-full h-full object-cover cursor-pointer"
+                    />
+                    {!videoPreviewPlaying && (
+                      <button
+                        type="button"
+                        onClick={handleToggleVideoPreview}
+                        className="absolute inset-0 bg-black/35 hover:bg-black/20 flex items-center justify-center cursor-pointer transition"
+                      >
+                        <span className="w-16 h-16 rounded-full bg-white text-neutral-950 flex items-center justify-center shadow-2xl">
+                          <svg className="w-8 h-8 fill-current translate-x-0.5" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                        </span>
+                      </button>
+                    )}
+                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-black/70 text-[10px] font-bold text-[#FACC15] border border-white/10">
+                      {entryType === 'dance' ? '💃 Synced to Challenge Audio' : '🎤 Live Cover Audio'}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center p-6 space-y-2">
+                    <div className="text-4xl">{entryType === 'dance' ? '💃' : '🎤'}</div>
+                    <p className="text-sm font-black text-white">
+                      {entryType === 'dance' ? 'Dance Challenge Video' : 'Music Cover Video'}
+                    </p>
+                    <p className="text-xs text-neutral-400 max-w-xs mx-auto">
+                      Upload an MP4/WebM/MOV clip (max 30s, 25 MB) or record directly with your camera.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Record / Upload Controls */}
+              <div className="p-4 rounded-3xl bg-[#121212] border border-[#536D56]/40 flex flex-wrap items-center gap-3">
+                {isRecording ? (
+                  <button
+                    type="button"
+                    onClick={handleStopRecording}
+                    className="flex-1 py-3 px-5 rounded-2xl bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg"
+                  >
+                    ⏹ Stop Recording ({recordCountdown}s)
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartRecording}
+                    className="flex-1 py-3 px-5 rounded-2xl bg-[#F43F5E] hover:bg-[#e11d48] text-white font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg"
+                  >
+                    📹 Record with Camera
+                  </button>
+                )}
+
+                <label className="flex-1 py-3 px-5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-white font-bold text-xs text-center cursor-pointer transition">
+                  <span>📁 Upload Video File</span>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/*"
+                    onChange={handleVideoFileSelect}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* RIGHT: Style Selector, Song Slice Picker (for Dance) & Submit */}
+            <div className="lg:col-span-6 space-y-5">
+              {/* Style Selector: Dance Challenge vs Music Cover */}
+              <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
+                <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider">
+                  1. Video Style
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEntryType('dance')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
+                      entryType === 'dance'
+                        ? 'border-[#F43F5E] bg-[#F43F5E]/15'
+                        : 'border-neutral-800 bg-neutral-900/70 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">💃</div>
+                    <div className="text-xs font-black text-white">Dance Challenge</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">
+                      Mutes mic &amp; syncs to clean challenge song slice.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEntryType('cover')}
+                    className={`p-3.5 rounded-2xl border-2 text-left transition cursor-pointer ${
+                      entryType === 'cover'
+                        ? 'border-[#FACC15] bg-[#FACC15]/15'
+                        : 'border-neutral-800 bg-neutral-900/70 hover:border-neutral-700'
+                    }`}
+                  >
+                    <div className="text-lg mb-1">🎤</div>
+                    <div className="text-xs font-black text-white">Music Cover</div>
+                    <div className="text-[10px] text-neutral-400 mt-0.5">
+                      Keeps your live vocal or instrument audio.
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Challenge Song & Section Picker (reused for Dance Challenge) */}
+              <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
+                <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider block">
+                  2. Challenge Song {entryType === 'dance' ? '& Dance Slice' : ''}
+                </label>
+                <select
+                  disabled={loading}
+                  value={selectedChallenge?.song_id || selectedChallenge?.id || ''}
+                  onChange={(e) => {
+                    const found = challenges.find(
+                      (c) => c.song_id === e.target.value || c.id === e.target.value
+                    )
+                    if (found) {
+                      setLoadedSongDuration(null)
+                      setSelectedChallenge(found)
+                      if (found.song) loadSong(found.song, 0)
+                    }
+                  }}
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-3 text-sm text-white font-semibold focus:outline-none focus:border-[#536D56] cursor-pointer"
+                >
+                  {challenges.map((ch) => (
+                    <option key={ch.song_id || ch.id} value={ch.song_id || ch.id}>
+                      {ch.song?.title || 'Unknown Track'} — {ch.song?.genre || 'Afropop'}
+                    </option>
+                  ))}
+                </select>
+
+                {entryType === 'dance' && (
+                  <div className="space-y-3 pt-2 border-t border-neutral-800">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-neutral-300 font-bold">
+                        Start at <span className="text-emerald-400 font-mono">{formatTime(startSec)}</span>
+                      </span>
+                      <span className="font-mono font-black text-[#FACC15]">
+                        {formatTime(startSec)} → {formatTime(clipEnd)} ({playDuration}s)
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.max(0, songDuration - 4)}
+                      step={1}
+                      value={startSec}
+                      onChange={(e) => handleStartSpotChange(parseFloat(e.target.value))}
+                      className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-emerald-400"
+                    />
+                    <div className="flex flex-wrap gap-1.5">
+                      {[8, 12, 16, 20, 25, 30].map((sec) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          disabled={sec > maxDuration}
+                          onClick={() => handlePlayDurationChange(sec)}
+                          className={`text-[11px] px-2.5 py-1 rounded-full font-bold border transition cursor-pointer ${
+                            playDuration === sec
+                              ? 'bg-[#FACC15] text-neutral-950 border-[#FACC15]'
+                              : 'bg-neutral-900 text-neutral-300 border-neutral-700 disabled:opacity-40'
+                          }`}
+                        >
+                          {sec}s
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Caption & Submit */}
+              <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
+                <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider block">
+                  3. Caption &amp; Publish
+                </label>
+                <input
+                  type="text"
+                  value={videoCaption}
+                  onChange={(e) => setVideoCaption(e.target.value)}
+                  maxLength={120}
+                  placeholder="Add a caption in English, French, or Pidgin..."
+                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
+                />
+
+                {videoError && (
+                  <div className="p-3 rounded-2xl bg-red-950/60 border border-red-500/40 text-red-200 text-xs">
+                    ⚠️ {videoError}
+                  </div>
+                )}
+
+                {videoSubmitSuccess && (
+                  <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs">
+                    🎉 Video published! Redirecting to feed...
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={uploadingVideo || videoSubmitSuccess || !videoBlob}
+                  onClick={handleSubmitVideo}
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#F43F5E] via-[#E11D48] to-[#BE123C] hover:opacity-95 text-white font-black text-sm uppercase tracking-wider shadow-2xl transition cursor-pointer disabled:opacity-50"
+                >
+                  {uploadingVideo
+                    ? 'Uploading Video & Publishing...'
+                    : videoSubmitSuccess
+                    ? '✓ Video Published!'
+                    : '🚀 Publish Video Entry'}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* 3 PREDEFINED 1-CLICK STORY TEMPLATES */}
         <div className="p-4 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-3">
           <div className="flex items-center justify-between">
@@ -578,7 +1092,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {STORY_TEMPLATES.map((tmpl) => {
               const isSelected = activeTemplateId === tmpl.id
-              return (
+                return (
                 <button
                   key={tmpl.id}
                   type="button"
@@ -610,7 +1124,6 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
             })}
           </div>
         </div>
-      </div>
 
       {/* ========================================================= */}
       {/* 2. MAIN STUDIO GRID (Stage Preview & Controls) */}
@@ -851,7 +1364,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                 const endPct = (clipEnd / songDuration) * 100
                 const inWindow = barPct >= startPct && barPct <= endPct
 
-                return (
+                  return (
                   <div key={i} className="flex-1 flex items-center justify-center h-full">
                     <div
                       className={`w-full max-w-[4px] rounded-full transition-all duration-150 ${
@@ -946,7 +1459,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                 {[8, 12, 16, 20, 25, 30].map((sec) => {
                   const isDisabled = sec > maxDuration
                   const isActive = playDuration === sec
-                  return (
+                    return (
                     <motion.button
                       key={sec}
                       type="button"
@@ -1071,7 +1584,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
               commitSceneCharacters(updated)
             }
 
-            return (
+              return (
               <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-5">
                 {/* Scene Editor Header + Duration Tweak */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1175,7 +1688,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                       'bg-orange-400',
                     ]
 
-                    return (
+                      return (
                       <div
                         key={cIdx}
                         className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3"
@@ -1217,7 +1730,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                         <div className="grid grid-cols-3 gap-2">
                           {CHARACTERS.map((char) => {
                             const isSelected = sc.id === char.id
-                            return (
+                              return (
                               <button
                                 key={char.id}
                                 type="button"
@@ -1250,7 +1763,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
                           <div className="flex flex-wrap gap-1.5">
                             {COMIC_EXPRESSIONS.map((exp) => {
                               const isSelected = charExpr === exp.id
-                              return (
+                                return (
                                 <motion.button
                                   key={exp.id}
                                   type="button"
@@ -1316,7 +1829,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {STORY_BACKGROUNDS.slice(0, 4).map((bg) => {
                   const isSelected = (activeScene.bg || 'street_buea') === bg.id
-                  return (
+                    return (
                     <motion.button
                       key={bg.id}
                       type="button"
@@ -1344,7 +1857,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {BG_MOTIONS.map((m) => {
                   const isSelected = (activeScene.bgMotion || 'static') === m.id
-                  return (
+                    return (
                     <motion.button
                       key={m.id}
                       type="button"
@@ -1535,7 +2048,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
             const sfxInfo = STORY_SFX_LIST.find((s) => s.id === block.sfx)
             const hasB = block.charB_id !== undefined ? Boolean(block.charB_id) : characterB !== 'none'
 
-            return (
+              return (
               <div
                 key={idx}
                 role="button"
@@ -1624,6 +2137,8 @@ export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateT
           })}
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

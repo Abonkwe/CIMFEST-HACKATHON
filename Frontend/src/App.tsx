@@ -16,8 +16,9 @@ import { AccountPage } from './pages/AccountPage'
 import { AdminPage } from './pages/AdminPage'
 import { ArtistStudioPage } from './pages/ArtistStudioPage'
 import { StudioPage } from './pages/StudioPage'
+import { MusicPage } from './pages/MusicPage'
 
-const VALID_TABS = ['trending', 'challenges', 'feed', 'studio', 'account', 'admin', 'artist-studio']
+const VALID_TABS = ['trending', 'music', 'challenges', 'feed', 'studio', 'account', 'admin', 'artist-studio']
 
 export interface NavigateParams {
   challenge_id?: string | null
@@ -116,6 +117,7 @@ const MainShell: React.FC = () => {
         {/* Center Main Workspace */}
         <main className="flex-1 w-full min-w-0 px-4 sm:px-6 md:px-6 lg:px-8 xl:px-10 py-4 sm:py-6 overflow-y-auto max-h-screen">
           {effectiveTab === 'trending' && <TrendingScreen onNavigateTab={handleTabChange} />}
+          {effectiveTab === 'music' && <MusicPage onNavigateTab={handleTabChange} />}
           {effectiveTab === 'challenges' && <ChallengesScreen onNavigateTab={handleTabChange} />}
           {effectiveTab === 'feed' && (
             <FeedScreen
@@ -151,7 +153,7 @@ const MainShell: React.FC = () => {
         )}
 
         {/* Floating HTML5 Audio Player Bar across all screens */}
-        <AudioPlayerBar />
+        <AudioPlayerBar onNavigateTab={handleTabChange} />
 
         {/* Mobile Bottom Navigation Bar (< 768px) */}
         <MobileBottomNav currentTab={currentTab} onTabChange={handleTabChange} />

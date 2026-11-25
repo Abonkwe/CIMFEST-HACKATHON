@@ -1,10 +1,12 @@
 import React, { createContext, useContext, useState, useRef, useEffect, useCallback } from 'react'
 import type { Song, StorySFX } from '../types'
 import { resolveClipUrl, storySFX } from '../lib/audioUtils'
+import { getOfflinePlayableUrl } from '../lib/offlineVault'
 
 interface AudioContextType {
   currentSong: Song | null
   isPlaying: boolean
+  isPlayingOffline: boolean
   isPlayerVisible: boolean
   currentTime: number
   duration: number
@@ -22,6 +24,7 @@ interface AudioContextType {
 const AudioContext = createContext<AudioContextType>({
   currentSong: null,
   isPlaying: false,
+  isPlayingOffline: false,
   isPlayerVisible: false,
   currentTime: 0,
   duration: 20,
@@ -39,6 +42,7 @@ const AudioContext = createContext<AudioContextType>({
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentSong, setCurrentSong] = useState<Song | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [isPlayingOffline, setIsPlayingOffline] = useState(false)
   const [isPlayerVisible, setIsPlayerVisible] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(24)
@@ -59,6 +63,18 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fallbackIntervalRef = useRef<any>(null)
   const currentSongRef = useRef<Song | null>(null)
   const isIntentionalPlayRef = useRef(false)
+  const offlineRevokeRef = useRef<(() => void) | null>(null)
+  const playSessionRef = useRef(0)
+
+  const revokeOfflineBlob = useCallback(() => {
+    if (offlineRevokeRef.current) {
+      try {
+        offlineRevokeRef.current()
+      } catch {}
+      offlineRevokeRef.current = null
+    }
+    setIsPlayingOffline(false)
+  }, [])
 
   useEffect(() => {
     currentSongRef.current = currentSong
@@ -192,12 +208,30 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setDuration(song.duration_sec || 24)
     hasErrorRef.current = false
     setHasError(false)
+    revokeOfflineBlob()
+
+    const sessionId = ++playSessionRef.current
 
     // Assign source & pre-position playhead cleanly before playback starts
     audioRef.current.src = resolvedUrl
     if (targetStartTime > 0) {
       safeSeek(audioRef.current, targetStartTime)
     }
+
+    // Check IndexedDB Offline Vault first: if saved, swap to decrypted in-memory Blob URL
+    getOfflinePlayableUrl(song.id).then((offline) => {
+      if (!offline) return
+      if (playSessionRef.current !== sessionId || !audioRef.current || !isIntentionalPlayRef.current) {
+        offline.revoke()
+        return
+      }
+      const resumeAt = audioRef.current.currentTime > 0 ? audioRef.current.currentTime : targetStartTime
+      offlineRevokeRef.current = offline.revoke
+      setIsPlayingOffline(true)
+      audioRef.current.src = offline.url
+      if (resumeAt > 0) safeSeek(audioRef.current, resumeAt)
+      audioRef.current.play().then(() => setIsPlaying(true)).catch(() => {})
+    })
 
     const playPromise = audioRef.current.play()
     if (playPromise !== undefined) {
@@ -286,7 +320,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }
 
   const stopSong = () => {
+    playSessionRef.current += 1
     isIntentionalPlayRef.current = false
+    revokeOfflineBlob()
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.removeAttribute('src')
@@ -308,6 +344,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       value={{
         currentSong,
         isPlaying,
+        isPlayingOffline,
         isPlayerVisible,
         currentTime,
         duration,
