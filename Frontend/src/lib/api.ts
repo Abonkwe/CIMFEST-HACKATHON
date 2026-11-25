@@ -1,7 +1,11 @@
 import type {
+  AdminAnalyticsResponse,
   AdminQueuesResponse,
+  AlbumCreatePayload,
   ArtistApplicationPayload,
+  ArtistChallengePayload,
   ArtistProfile,
+  ArtistSongInsight,
   Challenge,
   Creation,
   ReportPayload,
@@ -34,6 +38,43 @@ export function getApiBaseUrl(): string {
 
 export const API_BASE = getApiBaseUrl()
 
+// In-memory Stale-While-Revalidate cache for GET responses (NFR-1)
+const SWR_TTL_MS = 20_000
+const apiGetCache = new Map<string, { data: unknown; ts: number }>()
+
+export function clearApiCache(prefix?: string): void {
+  if (!prefix) {
+    apiGetCache.clear()
+    return
+  }
+  for (const key of Array.from(apiGetCache.keys())) {
+    if (key.includes(prefix)) {
+      apiGetCache.delete(key)
+    }
+  }
+}
+
+async function fetchWithSWR<T>(url: string, fetcher: () => Promise<T>): Promise<T> {
+  const cached = apiGetCache.get(url)
+  const now = Date.now()
+
+  if (cached) {
+    // Revalidate in background if stale, return cached immediately
+    if (now - cached.ts > SWR_TTL_MS) {
+      fetcher()
+        .then((fresh) => {
+          apiGetCache.set(url, { data: fresh, ts: Date.now() })
+        })
+        .catch(() => {})
+    }
+    return cached.data as T
+  }
+
+  const fresh = await fetcher()
+  apiGetCache.set(url, { data: fresh, ts: Date.now() })
+  return fresh
+}
+
 // Helper for authenticated headers
 function getHeaders(token?: string | null): HeadersInit {
   const headers: HeadersInit = {
@@ -52,70 +93,82 @@ export async function checkApiHealth(): Promise<{ status: string; service: strin
 }
 
 export async function fetchTrendingSongs(): Promise<Song[]> {
-  try {
-    const res = await fetch(`${API_BASE}/songs/trending`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) {
-      const hasKocee = data.some(
-        (s: Song) => s.id === KOCEE_DEMO_SONG.id || s.title === KOCEE_DEMO_SONG.title
-      )
-      return hasKocee ? data : [KOCEE_DEMO_SONG, ...data]
+  const url = `${API_BASE}/songs/trending`
+  return fetchWithSWR(url, async () => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        const hasKocee = data.some(
+          (s: Song) => s.id === KOCEE_DEMO_SONG.id || s.title === KOCEE_DEMO_SONG.title
+        )
+        return hasKocee ? data : [KOCEE_DEMO_SONG, ...data]
+      }
+      return getFallbackSongs().filter((s) => s.status === 'trending')
+    } catch (err) {
+      console.warn('Using fallback trending songs:', err)
+      return getFallbackSongs().filter((s) => s.status === 'trending')
     }
-    return getFallbackSongs().filter((s) => s.status === 'trending')
-  } catch (err) {
-    console.warn('Using fallback trending songs:', err)
-    return getFallbackSongs().filter((s) => s.status === 'trending')
-  }
+  })
 }
 
 export async function fetchFreshSongs(): Promise<Song[]> {
-  try {
-    const res = await fetch(`${API_BASE}/songs/fresh`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) return data
-    return getFallbackSongs().filter((s) => s.status === 'fresh')
-  } catch (err) {
-    console.warn('Using fallback fresh songs:', err)
-    return getFallbackSongs().filter((s) => s.status === 'fresh')
-  }
+  const url = `${API_BASE}/songs/fresh`
+  return fetchWithSWR(url, async () => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) return data
+      return getFallbackSongs().filter((s) => s.status === 'fresh')
+    } catch (err) {
+      console.warn('Using fallback fresh songs:', err)
+      return getFallbackSongs().filter((s) => s.status === 'fresh')
+    }
+  })
 }
 
 export async function fetchActiveChallenges(): Promise<Challenge[]> {
-  try {
-    const res = await fetch(`${API_BASE}/challenges/active`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const data = await res.json()
-    if (Array.isArray(data) && data.length > 0) {
-      const hasKocee = data.some(
-        (c: Challenge) =>
-          c.id === KOCEE_DEMO_CHALLENGE.id || c.song?.title === KOCEE_DEMO_SONG.title
-      )
-      return hasKocee ? data : [KOCEE_DEMO_CHALLENGE, ...data]
+  const url = `${API_BASE}/challenges/active`
+  return fetchWithSWR(url, async () => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0) {
+        const hasKocee = data.some(
+          (c: Challenge) =>
+            c.id === KOCEE_DEMO_CHALLENGE.id || c.song?.title === KOCEE_DEMO_SONG.title
+        )
+        return hasKocee ? data : [KOCEE_DEMO_CHALLENGE, ...data]
+      }
+      return getFallbackChallenges()
+    } catch (err) {
+      console.warn('Using fallback active challenges:', err)
+      return getFallbackChallenges()
     }
-    return getFallbackChallenges()
-  } catch (err) {
-    console.warn('Using fallback active challenges:', err)
-    return getFallbackChallenges()
-  }
+  })
 }
 
 export async function fetchChallengeById(challengeId: string, tab: 'top' | 'rising' = 'top'): Promise<Challenge> {
-  try {
-    const res = await fetch(`${API_BASE}/challenges/${challengeId}?tab=${tab}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (err) {
-    console.warn('Using fallback challenge detail:', err)
-    const challenges = getFallbackChallenges()
-    const found = challenges.find((c) => c.id === challengeId) || challenges[0]
-    return {
-      ...found,
-      tab,
-      creations: getFallbackCreations(),
+  const url = `${API_BASE}/challenges/${challengeId}?tab=${tab}`
+  return fetchWithSWR(url, async () => {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return await res.json()
+    } catch (err) {
+      console.warn('Using fallback challenge detail:', err)
+      const challenges = getFallbackChallenges()
+      const found = challenges.find((c) => c.id === challengeId) || challenges[0]
+      return {
+        ...found,
+        tab,
+        creations: getFallbackCreations().filter((c) => c.challenge_id === found.id),
+      }
     }
-  }
+  })
 }
 
 function getLocalCreations(): Creation[] {
@@ -141,31 +194,43 @@ function saveLocalCreation(creation: Creation) {
   }
 }
 
-export async function fetchFeed(): Promise<Creation[]> {
-  let list: Creation[] = []
-  try {
-    const res = await fetch(`${API_BASE}/feed`)
-    if (res.ok) {
-      const data = await res.json()
-      if (Array.isArray(data) && data.length > 0) {
-        list = data
+export async function fetchFeed(challengeId?: string | null): Promise<Creation[]> {
+  const url = challengeId
+    ? `${API_BASE}/feed?challenge_id=${encodeURIComponent(challengeId)}`
+    : `${API_BASE}/feed`
+
+  return fetchWithSWR(url, async () => {
+    let list: Creation[] = []
+    let fetchedFromApi = false
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          fetchedFromApi = true
+          list = data
+        }
+      }
+    } catch (err) {
+      console.warn('Using fallback feed creations:', err)
+    }
+
+    if (!fetchedFromApi && list.length === 0 && !challengeId) {
+      list = getFallbackCreations()
+    }
+
+    // Only use local creations as an offline fallback when API failed
+    if (!fetchedFromApi) {
+      const locals = getLocalCreations().filter((l) =>
+        challengeId ? l.challenge_id === challengeId : true
+      )
+      if (locals.length > 0) {
+        list = [...locals, ...list.filter((c) => !locals.some((l) => l.id === c.id))]
       }
     }
-  } catch (err) {
-    console.warn('Using fallback feed creations:', err)
-  }
 
-  if (list.length === 0) {
-    list = getFallbackCreations()
-  }
-
-  // Prepend locally created animations so creators see their work instantly
-  const locals = getLocalCreations()
-  if (locals.length > 0) {
-    list = [...locals, ...list.filter((c) => !locals.some((l) => l.id === c.id))]
-  }
-
-  return list
+    return list
+  })
 }
 
 export async function recordCreationView(creationId: string): Promise<{ views: number }> {
@@ -182,19 +247,42 @@ export async function recordCreationView(creationId: string): Promise<{ views: n
   }
 }
 
+export interface MomoVotePayment {
+  momo_phone: string
+  amount_xaf: number
+  payment_reference?: string
+}
+
 export async function castVote(
   creationId: string,
-  token: string
-): Promise<{ status: string; creation_id: string; vote_count: number; message: string }> {
+  token: string,
+  payment: MomoVotePayment
+): Promise<{
+  status: string
+  creation_id: string
+  vote_count: number
+  payment_provider: string
+  amount_xaf: number
+  momo_phone: string
+  payment_reference: string
+  message: string
+}> {
   const res = await fetch(`${API_BASE}/votes`, {
     method: 'POST',
     headers: getHeaders(token),
-    body: JSON.stringify({ creation_id: creationId }),
+    body: JSON.stringify({
+      creation_id: creationId,
+      momo_phone: payment.momo_phone,
+      amount_xaf: payment.amount_xaf,
+      payment_provider: 'MTN_MOMO',
+      payment_reference: payment.payment_reference,
+    }),
   })
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}))
     throw new Error(errData.detail || `Failed to vote (HTTP ${res.status})`)
   }
+  clearApiCache()
   return res.json()
 }
 
@@ -220,42 +308,21 @@ export async function submitCreation(
 
   if (res && res.ok) {
     const created: Creation = await res.json()
-    saveLocalCreation({
-      ...created,
-      song: created.song || KOCEE_DEMO_SONG,
-      challenge: created.challenge || KOCEE_DEMO_CHALLENGE,
-    })
+    clearApiCache()
+    try {
+      localStorage.removeItem('beattoons_local_creations')
+    } catch {
+      // ignore
+    }
     return created
   }
 
-  // Fallback if challenge is demo or server rejects: Save locally so creator flow is seamless
-  let activeUser: User | null = null
-  try {
-    const rawUser = localStorage.getItem('beattoons_user')
-    if (rawUser) activeUser = JSON.parse(rawUser)
-  } catch {
-    // ignore
+  if (res && !res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || `Failed to publish creation (HTTP ${res.status})`)
   }
 
-  const localCreation: Creation = {
-    id: `local-${Date.now()}`,
-    challenge_id: data.challenge_id,
-    creator_id: activeUser?.id || '00000000-0000-0000-0000-000000000005',
-    character_id: data.character_id,
-    character: data.character_id,
-    moves_timeline: data.moves_timeline as any,
-    caption: data.caption || 'Kocee "We Di Go Na Go" dance challenge! 🇨🇲',
-    views: 1,
-    vote_count: 0,
-    engagement_rate: 0.0,
-    created_at: new Date().toISOString(),
-    creator_display_name: activeUser?.display_name || 'You (Creator)',
-    creator_region: activeUser?.region || 'Southwest',
-    song: KOCEE_DEMO_SONG,
-    challenge: KOCEE_DEMO_CHALLENGE,
-  }
-  saveLocalCreation(localCreation)
-  return localCreation
+  throw new Error('Could not reach the backend server to publish your story.')
 }
 
 export async function loginWithPhone(
@@ -381,6 +448,87 @@ export async function fetchMySongs(token: string): Promise<Song[]> {
   return res.json()
 }
 
+export async function adminAccessLogin(
+  phone: string,
+  adminCode: string
+): Promise<{
+  status: string
+  access_token: string
+  token_type: string
+  user: User
+  artist_profile?: ArtistProfile | null
+}> {
+  const res = await fetch(`${API_BASE}/auth/admin-access`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone: phone.trim(),
+      admin_code: adminCode.trim(),
+    }),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Invalid team admin passcode or phone number')
+  }
+  return res.json()
+}
+
+export async function uploadAlbum(
+  payload: AlbumCreatePayload,
+  token: string
+): Promise<{ status: string; album_name: string; tracks_count: number; songs: Song[] }> {
+  const res = await fetch(`${API_BASE}/songs/album`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to release album')
+  }
+  return res.json()
+}
+
+export async function fetchArtistSongsWithInsights(
+  token: string
+): Promise<{ status: string; songs_count: number; songs: ArtistSongInsight[] }> {
+  const res = await fetch(`${API_BASE}/artists/me/songs`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to load artist releases')
+  }
+  return res.json()
+}
+
+export async function launchArtistChallenge(
+  payload: ArtistChallengePayload,
+  token: string
+): Promise<{ status: string; message: string; challenge: Challenge; song_promoted: boolean }> {
+  const res = await fetch(`${API_BASE}/artists/challenges`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to launch challenge')
+  }
+  return res.json()
+}
+
+export async function fetchAdminAnalytics(token: string): Promise<AdminAnalyticsResponse> {
+  const res = await fetch(`${API_BASE}/admin/analytics`, {
+    headers: getHeaders(token),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Failed to fetch admin analytics')
+  }
+  return res.json()
+}
+
 export async function fetchAdminQueues(token: string): Promise<AdminQueuesResponse> {
   const res = await fetch(`${API_BASE}/admin/queues`, {
     headers: getHeaders(token),
@@ -412,6 +560,26 @@ export async function reviewArtistApplication(
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}))
     throw new Error(errData.detail || `Failed to ${decision} artist application`)
+  }
+  return res.json()
+}
+
+export async function moderateContent(
+  payload: {
+    action: 'remove_creation' | 'remove_song' | 'suspend_user' | 'resolve_report'
+    target_id: string
+    report_id?: string
+  },
+  token: string
+): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE}/admin/moderate`, {
+    method: 'POST',
+    headers: getHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}))
+    throw new Error(errData.detail || 'Moderation action failed')
   }
   return res.json()
 }
@@ -562,9 +730,9 @@ function getFallbackCreations(): Creation[] {
   const twoDaysLater = new Date(Date.now() + 48 * 3600 * 1000).toISOString()
   return [
     {
-      id: '33333333-koce-0000-0000-000000000001',
+      id: 'b08601a1-49bb-50ca-9fd2-a7f9a7fde91a',
       challenge_id: KOCEE_DEMO_CHALLENGE.id,
-      creator_id: '00000000-0000-0000-0000-000000000005',
+      creator_id: '92f607e7-d538-5d18-bf77-c5a66230590f',
       character_id: 'tantie',
       character: 'tantie',
       moves_timeline: [
@@ -632,7 +800,7 @@ function getFallbackCreations(): Creation[] {
       vote_count: 8,
       engagement_rate: 0.045,
       creator: {
-        id: '00000000-0000-0000-0000-000000000005',
+        id: '92f607e7-d538-5d18-bf77-c5a66230590f',
         display_name: 'Buea Animator',
         region: 'Southwest',
       },

@@ -1,5 +1,7 @@
 import React from 'react'
+import { motion } from 'framer-motion'
 import { useLanguage } from '../context/LanguageContext'
+import { useAuth } from '../context/AuthContext'
 
 interface MobileBottomNavProps {
   currentTab: string
@@ -8,6 +10,7 @@ interface MobileBottomNavProps {
 
 export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ currentTab, onTabChange }) => {
   const { t } = useLanguage()
+  const { user } = useAuth()
 
   const tabs = [
     {
@@ -54,6 +57,32 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ currentTab, on
         </svg>
       ),
     },
+    ...(user?.role === 'artist'
+      ? [
+          {
+            id: 'artist-studio',
+            label: 'Artist',
+            icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            ),
+          },
+        ]
+      : []),
+    ...(user?.role === 'admin'
+      ? [
+          {
+            id: 'admin',
+            label: 'Admin',
+            icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            ),
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -87,17 +116,24 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({ currentTab, on
           <button
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
-            className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer ${
+            className={`relative flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition cursor-pointer ${
               isActive ? 'text-[#FACC15]' : 'text-neutral-400 hover:text-white'
             }`}
           >
-            <div className="relative">
+            {isActive && (
+              <motion.span
+                layoutId="mobileNavActivePill"
+                transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                className="absolute inset-0 rounded-xl bg-[#536D56]/25 border border-[#536D56]/40"
+              />
+            )}
+            <div className="relative z-10">
               {tab.icon}
               {isActive && (
                 <span className="absolute -top-1 -right-1 w-1.5 h-1.5 rounded-full bg-[#FACC15]" />
               )}
             </div>
-            <span className={`text-[10px] font-semibold mt-1 ${isActive ? 'text-white' : ''}`}>
+            <span className={`relative z-10 text-[10px] font-semibold mt-1 ${isActive ? 'text-white' : ''}`}>
               {tab.label}
             </span>
           </button>

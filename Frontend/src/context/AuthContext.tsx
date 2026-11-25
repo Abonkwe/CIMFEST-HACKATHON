@@ -2,6 +2,12 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import type { ArtistProfile, User } from '../types'
 import { fetchMe, loginWithPhone, updateMyProfile } from '../lib/api'
 
+export interface OpenLoginOptions {
+  reason?: string
+  mode?: 'signup' | 'signin'
+  accountType?: 'fan_creator' | 'artist'
+}
+
 interface AuthContextType {
   user: User | null
   artistProfile: ArtistProfile | null
@@ -9,9 +15,12 @@ interface AuthContextType {
   isGuest: boolean
   isLoginModalOpen: boolean
   loginReason: string | null
-  openLoginModal: (reasonMessage?: string) => void
+  initialLoginMode: 'signup' | 'signin'
+  initialAccountType: 'fan_creator' | 'artist'
+  openLoginModal: (reasonOrOptions?: string | OpenLoginOptions) => void
   closeLoginModal: () => void
   login: (phone: string, otp: string, displayName?: string, region?: string) => Promise<User>
+  setAuthSession: (user: User, token: string, artistProfile?: ArtistProfile | null) => void
   updateProfile: (payload: { display_name?: string; region?: string }) => Promise<User>
   logout: () => void
   refreshMe: () => Promise<{ user: User; artist_profile: ArtistProfile | null } | null>
@@ -26,11 +35,14 @@ const AuthContext = createContext<AuthContextType>({
   isGuest: true,
   isLoginModalOpen: false,
   loginReason: null,
+  initialLoginMode: 'signup',
+  initialAccountType: 'fan_creator',
   openLoginModal: () => {},
   closeLoginModal: () => {},
   login: async () => {
     throw new Error('Not implemented')
   },
+  setAuthSession: () => {},
   updateProfile: async () => {
     throw new Error('Not implemented')
   },
@@ -71,6 +83,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false)
   const [loginReason, setLoginReason] = useState<string | null>(null)
+  const [initialLoginMode, setInitialLoginMode] = useState<'signup' | 'signin'>('signup')
+  const [initialAccountType, setInitialAccountType] = useState<'fan_creator' | 'artist'>('fan_creator')
 
   useEffect(() => {
     if (user && token) {
@@ -120,10 +134,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [token, refreshMe])
 
-  const openLoginModal = useCallback((reasonMessage?: string) => {
-    const cleanReason =
-      typeof reasonMessage === 'string' && reasonMessage.trim() ? reasonMessage.trim() : null
-    setLoginReason(cleanReason)
+  const openLoginModal = useCallback((reasonOrOptions?: string | OpenLoginOptions) => {
+    if (typeof reasonOrOptions === 'string') {
+      const cleanReason = reasonOrOptions.trim()
+      setLoginReason(cleanReason || null)
+      setInitialLoginMode('signup')
+      setInitialAccountType('fan_creator')
+    } else if (
+      reasonOrOptions &&
+      typeof reasonOrOptions === 'object' &&
+      !('nativeEvent' in reasonOrOptions)
+    ) {
+      setLoginReason(reasonOrOptions.reason?.trim() || null)
+      setInitialLoginMode(reasonOrOptions.mode || 'signup')
+      setInitialAccountType(reasonOrOptions.accountType || 'fan_creator')
+    } else {
+      setLoginReason(null)
+      setInitialLoginMode('signup')
+      setInitialAccountType('fan_creator')
+    }
     setIsLoginModalOpen(true)
   }, [])
 
@@ -131,6 +160,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoginModalOpen(false)
     setLoginReason(null)
   }, [])
+
+  const setAuthSession = useCallback(
+    (nextUser: User, nextToken: string, nextArtistProfile?: ArtistProfile | null) => {
+      setUser(nextUser)
+      setToken(nextToken)
+      setArtistProfile(nextArtistProfile ?? null)
+    },
+    []
+  )
 
   const login = async (
     phone: string,
@@ -171,9 +209,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isGuest: !user,
         isLoginModalOpen,
         loginReason,
+        initialLoginMode,
+        initialAccountType,
         openLoginModal,
         closeLoginModal,
         login,
+        setAuthSession,
         updateProfile,
         logout,
         refreshMe,

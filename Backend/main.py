@@ -1,3 +1,5 @@
+import os
+import socket
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from auth import router as auth_router
@@ -9,6 +11,7 @@ from routers.creations import router as creations_router
 from routers.feed import router as feed_router
 from routers.reports import router as reports_router
 from routers.songs import router as songs_router
+from routers.users import router as users_router
 from routers.votes import router as votes_router
 
 app = FastAPI(
@@ -17,16 +20,10 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Configure CORS for localhost and local network devices (e.g. mobile phones on Wi-Fi)
-origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
-
+# Configure CORS for localhost and any LAN / Wi-Fi device on the network (any port/hostname)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$",
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -40,6 +37,7 @@ app.include_router(creations_router)
 app.include_router(votes_router)
 app.include_router(feed_router)
 app.include_router(artists_router)
+app.include_router(users_router)
 app.include_router(reports_router)
 app.include_router(admin_router)
 
@@ -78,7 +76,20 @@ def test_db():
         )
 
 
+def _get_lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "8000"))
+    lan_ip = _get_lan_ip()
+    print(f"BeatToons API listening on http://{host}:{port} (LAN: http://{lan_ip}:{port})")
+    uvicorn.run("main:app", host=host, port=port, reload=True)

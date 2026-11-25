@@ -6,21 +6,27 @@ import { useLanguage } from '../context/LanguageContext'
 
 interface RightSidebarProps {
   currentTab: string
+  challengeId?: string | null
   onSelectSong?: (song: Song) => void
-  onNavigateTab?: (tab: string) => void
+  onNavigateTab?: (tab: string, params?: { challenge_id?: string | null; song_id?: string | null }) => void
 }
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNavigateTab }) => {
+export const RightSidebar: React.FC<RightSidebarProps> = ({
+  currentTab,
+  challengeId,
+  onNavigateTab,
+}) => {
   const { currentSong, isPlaying, playSong, togglePlay } = useAudio()
   const { t } = useLanguage()
 
   const [trendingSongs, setTrendingSongs] = useState<Song[]>([])
+  const [challengesList, setChallengesList] = useState<Challenge[]>([])
   const [activeChallenge, setActiveChallenge] = useState<Challenge | null>(null)
   const [leaderboardTab, setLeaderboardTab] = useState<'top' | 'rising'>('top')
   const [rankings, setRankings] = useState<Creation[]>([])
   const [loading, setLoading] = useState(false)
 
-  // Load trending songs & active challenge
+  // Load trending songs & active challenges
   useEffect(() => {
     let mounted = true
     const loadData = async () => {
@@ -31,8 +37,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
         ])
         if (!mounted) return
         setTrendingSongs(songs)
+        setChallengesList(challenges || [])
         if (challenges && challenges.length > 0) {
-          setActiveChallenge(challenges[0])
+          const matched = challengeId
+            ? challenges.find((c) => c.id === challengeId)
+            : null
+          setActiveChallenge(matched || challenges[0])
         }
       } catch (err) {
         console.warn('Right sidebar load error:', err)
@@ -42,7 +52,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ currentTab, onNaviga
     return () => {
       mounted = false
     }
-  }, [])
+  }, [challengeId])
+
+  // Keep activeChallenge synced when challengeId changes
+  useEffect(() => {
+    if (!challengesList.length) return
+    if (challengeId) {
+      const matched = challengesList.find((c) => c.id === challengeId)
+      if (matched) setActiveChallenge(matched)
+    } else {
+      setActiveChallenge(challengesList[0])
+    }
+  }, [challengeId, challengesList])
 
   // Load leaderboard when active challenge or tab changes
   useEffect(() => {

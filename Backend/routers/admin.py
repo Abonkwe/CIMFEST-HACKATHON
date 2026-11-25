@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from db import get_supabase_client
-from auth import get_admin_user
+from auth import get_admin_user, normalize_artist_profile
 from schemas import ArtistReviewRequest, ModerateRequest
 
 router = APIRouter(prefix="/admin", tags=["Admin & Moderation"])
@@ -90,6 +90,116 @@ def recalculate_trending_scores(current_admin: dict = Depends(get_admin_user)):
         )
 
 
+@router.get("/analytics", summary="Platform-Wide Real-Time Admin Analytics (FR-6, FR-37, FR-38)")
+def get_admin_analytics(current_admin: dict = Depends(get_admin_user)):
+    """Returns real-time platform totals, regional user breakdown, top songs, and full pending applications."""
+    client = get_supabase_client()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        users = client.table("users").select("*").execute().data or []
+        artist_profiles = client.table("artist_profiles").select("*").execute().data or []
+        songs = client.table("songs").select("*").execute().data or []
+        challenges = client.table("challenges").select("*").execute().data or []
+        creations = client.table("creations").select("id, challenge_id").execute().data or []
+        votes = client.table("votes").select("id, creation_id").execute().data or []
+        reports = client.table("reports").select("id, status").execute().data or []
+
+        user_map = {u["id"]: u for u in users}
+        ap_map = {ap["user_id"]: normalize_artist_profile(ap) or ap for ap in artist_profiles}
+
+        # Regional breakdown
+        users_by_region: dict[str, int] = {}
+        total_fans_creators = 0
+        for u in users:
+            region = u.get("region") or "Unknown"
+            users_by_region[region] = users_by_region.get(region, 0) + 1
+            if u.get("role") == "fan_creator":
+                total_fans_creators += 1
+
+        verified_artists = sum(1 for ap in artist_profiles if ap.get("verification_status") == "approved")
+        pending_profiles = [ap for ap in artist_profiles if ap.get("verification_status") == "pending"]
+        active_challenges = sum(
+            1
+            for ch in challenges
+            if ch.get("status") == "active" and (not ch.get("ends_at") or ch["ends_at"] > now_iso)
+        )
+        open_reports = sum(1 for r in reports if r.get("status") == "open")
+
+        # Song engagement ranking (creations + votes)
+        challenge_to_song = {ch["id"]: ch.get("song_id") for ch in challenges}
+        vote_counts_by_creation: dict[str, int] = {}
+        for v in votes:
+            cid = v.get("creation_id")
+            if cid:
+                vote_counts_by_creation[cid] = vote_counts_by_creation.get(cid, 0) + 1
+
+        song_creations: dict[str, int] = {}
+        song_votes: dict[str, int] = {}
+        for c in creations:
+            sid = challenge_to_song.get(c.get("challenge_id"))
+            if sid:
+                song_creations[sid] = song_creations.get(sid, 0) + 1
+                song_votes[sid] = song_votes.get(sid, 0) + vote_counts_by_creation.get(c["id"], 0)
+
+        top_songs = []
+        for s in songs:
+            sid = s["id"]
+            cr_count = song_creations.get(sid, 0)
+            vt_count = song_votes.get(sid, 0)
+            ap = ap_map.get(s.get("artist_id")) or {}
+            u = user_map.get(s.get("artist_id")) or {}
+            top_songs.append({
+                "id": sid,
+                "title": s.get("title"),
+                "album_name": s.get("album_name", "Single"),
+                "artist_name": ap.get("artist_name") or u.get("display_name", "Artist"),
+                "genre": s.get("genre"),
+                "status": s.get("status"),
+                "trending_score": s.get("trending_score", 0.0),
+                "creations_count": cr_count,
+                "votes_count": vt_count,
+                "engagement_total": cr_count + vt_count,
+            })
+
+        top_songs.sort(key=lambda item: (item["engagement_total"], item["trending_score"]), reverse=True)
+        top_songs = top_songs[:5]
+
+        # Full pending applications enriched with applicant phone/display_name/region
+        pending_applications = []
+        for ap in pending_profiles:
+            normalized = normalize_artist_profile(ap) or dict(ap)
+            applicant = user_map.get(ap.get("user_id")) or {}
+            pending_applications.append({
+                **normalized,
+                "phone": applicant.get("phone"),
+                "display_name": applicant.get("display_name"),
+                "region": applicant.get("region"),
+            })
+
+        return {
+            "status": "ok",
+            "totals": {
+                "total_users": len(users),
+                "total_fans_creators": total_fans_creators,
+                "verified_artists": verified_artists,
+                "pending_artists": len(pending_profiles),
+                "total_songs": len(songs),
+                "active_challenges": active_challenges,
+                "total_creations": len(creations),
+                "total_votes": len(votes),
+                "open_reports": open_reports,
+            },
+            "users_by_region": users_by_region,
+            "top_songs": top_songs,
+            "pending_applications": pending_applications,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compute admin analytics: {str(e)}",
+        )
+
+
 @router.get("/queues", summary="Get Admin Queues: Verification & Reports (FR-37)")
 def get_admin_queues(current_admin: dict = Depends(get_admin_user)):
     """Returns all pending artist verification applications and open reports."""
@@ -102,7 +212,19 @@ def get_admin_queues(current_admin: dict = Depends(get_admin_user)):
             .eq("verification_status", "pending")
             .execute()
         )
-        pending_artists = p_res.data or []
+        raw_pending = p_res.data or []
+
+        # Enrich with applicant user info
+        users_map = {}
+        if raw_pending:
+            u_res = client.table("users").select("id, display_name, phone, region, role").execute()
+            users_map = {u["id"]: u for u in (u_res.data or [])}
+
+        pending_artists = []
+        for ap in raw_pending:
+            normalized = normalize_artist_profile(ap) or {}
+            normalized["user"] = users_map.get(ap.get("user_id"))
+            pending_artists.append(normalized)
 
         # Open reports
         r_res = (
@@ -151,15 +273,26 @@ def review_artist_application(
             raise HTTPException(status_code=404, detail="Artist profile not found.")
 
         # Update artist_profile
-        client.table("artist_profiles").update({
+        ap_update_res = client.table("artist_profiles").update({
             "verification_status": req.decision,
             "reviewed_by": current_admin["id"],
             "reviewed_at": now_iso,
         }).eq("user_id", user_id).execute()
 
-        # If approved, update user's role to artist
+        # Fetch target user and update role cleanly
+        user_res = client.table("users").select("*").eq("id", user_id).execute()
+        updated_user = user_res.data[0] if user_res.data else None
+
         if req.decision == "approved":
-            client.table("users").update({"role": "artist"}).eq("id", user_id).execute()
+            u_up = client.table("users").update({"role": "artist"}).eq("id", user_id).execute()
+            if u_up.data:
+                updated_user = u_up.data[0]
+        elif req.decision == "rejected" and updated_user and updated_user.get("role") == "artist":
+            u_up = client.table("users").update({"role": "fan_creator"}).eq("id", user_id).execute()
+            if u_up.data:
+                updated_user = u_up.data[0]
+
+        updated_profile = normalize_artist_profile(ap_update_res.data[0]) if ap_update_res.data else None
 
         return {
             "status": "ok",
@@ -167,6 +300,8 @@ def review_artist_application(
             "verification_status": req.decision,
             "reviewed_by": current_admin["id"],
             "reviewed_at": now_iso,
+            "artist_profile": updated_profile,
+            "user": updated_user,
             "message": f"Artist application has been {req.decision}.",
         }
     except HTTPException:

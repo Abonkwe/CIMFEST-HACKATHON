@@ -1,4 +1,5 @@
 import React from 'react'
+import { motion } from 'framer-motion'
 import { useLanguage } from '../context/LanguageContext'
 import { useAuth } from '../context/AuthContext'
 
@@ -59,6 +60,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
         </svg>
       ),
     },
+    ...(user?.role === 'artist'
+      ? [
+          {
+            id: 'artist-studio',
+            label: 'Artist Studio',
+            icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+              </svg>
+            ),
+            badge: 'Artist',
+          },
+        ]
+      : []),
+    ...(user?.role === 'admin'
+      ? [
+          {
+            id: 'admin',
+            label: 'Admin',
+            icon: (
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+            ),
+            badge: 'Team',
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -107,20 +136,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onTabChange }) => 
               <button
                 key={item.id}
                 onClick={() => onTabChange(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all duration-150 cursor-pointer ${
+                className={`relative w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-colors duration-150 cursor-pointer ${
                   isActive
-                    ? 'bg-[#536D56] text-white shadow-md shadow-[#536D56]/30'
+                    ? 'text-white'
                     : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                {isActive && (
+                  <motion.span
+                    layoutId="sidebarActivePill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+                    className="absolute inset-0 rounded-2xl bg-[#536D56] shadow-md shadow-[#536D56]/30"
+                  />
+                )}
+                <div className="relative z-10 flex items-center gap-3">
                   <span className={isActive ? 'text-[#FACC15]' : 'text-neutral-400'}>
                     {item.icon}
                   </span>
                   <span>{item.label}</span>
                 </div>
                 {item.badge && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F43F5E]/20 text-[#F43F5E] border border-[#F43F5E]/30">
+                  <span className="relative z-10 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F43F5E]/20 text-[#F43F5E] border border-[#F43F5E]/30">
                     {item.badge}
                   </span>
                 )}

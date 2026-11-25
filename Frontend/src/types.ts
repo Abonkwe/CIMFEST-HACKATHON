@@ -28,6 +28,12 @@ export interface User {
 export interface ArtistProfile {
   user_id: string
   artist_name: string
+  full_legal_name?: string | null
+  email?: string | null
+  country_of_residence?: string | null
+  primary_genre?: string | null
+  bio?: string | null
+  avatar_url?: string | null
   social_links?: Record<string, any>
   release_links?: string[]
   verification_status: 'pending' | 'approved' | 'rejected'
@@ -36,6 +42,9 @@ export interface ArtistProfile {
 }
 
 export interface AdminPendingArtist extends ArtistProfile {
+  phone?: string | null
+  display_name?: string | null
+  region?: string | null
   user?: {
     id: string
     display_name: string
@@ -63,13 +72,73 @@ export interface AdminQueuesResponse {
   open_reports_count: number
 }
 
+export interface AdminAnalyticsResponse {
+  status: string
+  totals: {
+    total_users: number
+    total_fans_creators: number
+    verified_artists: number
+    pending_artists: number
+    total_songs: number
+    active_challenges: number
+    total_creations: number
+    total_votes: number
+    open_reports: number
+  }
+  users_by_region: Record<string, number>
+  top_songs: {
+    id: string
+    title: string
+    album_name?: string
+    artist_name: string
+    genre: string
+    status: string
+    trending_score: number
+    creations_count: number
+    votes_count: number
+    engagement_total: number
+  }[]
+  pending_applications: AdminPendingArtist[]
+}
+
 export interface SongCreatePayload {
   title: string
+  album_name?: string
   genre: string
   language: string
   clip_url: string
   duration_sec: number
   bpm: number
+}
+
+export interface AlbumTrackPayload {
+  title: string
+  clip_url: string
+  duration_sec: number
+  bpm: number
+  genre?: string
+  language?: string
+}
+
+export interface AlbumCreatePayload {
+  album_name: string
+  genre: string
+  language: string
+  tracks: AlbumTrackPayload[]
+}
+
+export interface ArtistSongInsight extends Song {
+  album_name?: string
+  plays_count: number
+  creations_count: number
+  votes_count: number
+  active_challenges_count: number
+}
+
+export interface ArtistChallengePayload {
+  song_id: string
+  title: string
+  duration_hours: number
 }
 
 export interface Song {
@@ -87,6 +156,15 @@ export interface Song {
   trending_score: number
   created_at?: string
 }
+
+export type ComicExpression =
+  | 'happy'
+  | 'laughing'
+  | 'sad'
+  | 'angry'
+  | 'shocked'
+  | 'love'
+  | 'confused'
 
 export type StoryAction =
   | 'walk_in'
@@ -131,8 +209,10 @@ export interface MoveBlock {
   // Interactive storytelling scene metadata (backward-compatible)
   charA_action?: StoryAction | string
   charB_action?: StoryAction | string
+  charA_expression?: ComicExpression | string
+  charB_expression?: ComicExpression | string
   charA_id?: string
-  charB_id?: string
+  charB_id?: string | null
   bg?: StoryBackground | string
   bgMotion?: BgMotion
   prop?: StoryProp
@@ -178,6 +258,8 @@ export interface Creation {
 export interface Challenge {
   id: string
   song_id: string
+  title?: string | null
+  created_by?: string | null
   song?: Song
   status: 'active' | 'ended'
   starts_at?: string
@@ -196,6 +278,12 @@ export interface AuthState {
 
 export interface ArtistApplicationPayload {
   artist_name: string
+  full_legal_name: string
+  email: string
+  country_of_residence?: string
+  primary_genre?: string
+  bio?: string
+  avatar_url?: string
   social_links: Record<string, string>
   release_links: string[]
 }

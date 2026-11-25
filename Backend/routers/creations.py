@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from cache import invalidate_cache
 from db import get_supabase_client
 from auth import get_current_user
 from schemas import CreationCreate
@@ -48,7 +49,7 @@ def submit_creation(creation: CreationCreate, current_user: dict = Depends(get_c
         new_creation_data = {
             "challenge_id": creation.challenge_id,
             "creator_id": current_user["id"],
-            "character": creation.character_id,
+            "character_id": creation.character_id,
             "moves_timeline": timeline_data,
             "caption": creation.caption,
             "views": 0,
@@ -57,6 +58,7 @@ def submit_creation(creation: CreationCreate, current_user: dict = Depends(get_c
         res = client.table("creations").insert(new_creation_data).execute()
         if not res.data:
             raise HTTPException(status_code=500, detail="Failed to save creation to database.")
+        invalidate_cache("feed:", "challenges:", "challenge:")
         return res.data[0]
     except HTTPException:
         raise
@@ -80,6 +82,7 @@ def record_creation_view(creation_id: str):
         new_views = current_views + 1
 
         update_res = client.table("creations").update({"views": new_views}).eq("id", creation_id).execute()
+        invalidate_cache("feed:", "challenges:", "challenge:")
         return {
             "status": "ok",
             "creation_id": creation_id,

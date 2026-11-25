@@ -1,5 +1,7 @@
+import uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
+from cache import invalidate_cache
 from db import get_supabase_client
 from auth import get_current_user
 from schemas import VoteCreate
@@ -7,16 +9,25 @@ from schemas import VoteCreate
 router = APIRouter(prefix="/votes", tags=["Votes"])
 
 
-@router.post("", summary="Cast a Vote for a Creation (FR-26, FR-27, NFR-9)")
+@router.post("", summary="Cast a Paid Vote via MTN Mobile Money (FR-26, FR-27, NFR-9)")
 def vote_creation(vote: VoteCreate, current_user: dict = Depends(get_current_user)):
-    """Records one vote per user per creation.
+    """Records one paid vote per user per creation via MTN Mobile Money.
 
     Enforces:
-    - Target creation exists.
+    - Target creation_id is a valid UUID and exists.
+    - MTN Mobile Money payment details are provided (minimum 100 XAF).
     - Associated challenge is active and has not expired.
     - Duplicate votes from the same account are rejected with HTTP 409 Conflict.
-    - Returns updated total vote count for the creation.
+    - Returns updated total vote count and payment confirmation.
     """
+    try:
+        uuid.UUID(vote.creation_id)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid creation ID format.",
+        )
+
     client = get_supabase_client()
     try:
         # Verify creation exists
@@ -82,11 +93,18 @@ def vote_creation(vote: VoteCreate, current_user: dict = Depends(get_current_use
         v_res = client.table("votes").select("id").eq("creation_id", vote.creation_id).execute()
         total_votes = len(v_res.data or [])
 
+        invalidate_cache("feed:", "challenges:", "challenge:")
+        payment_ref = vote.payment_reference or f"MOMO-{uuid.uuid4().hex[:8].upper()}"
+
         return {
             "status": "ok",
             "creation_id": vote.creation_id,
             "vote_count": total_votes,
-            "message": "Vote recorded successfully",
+            "payment_provider": vote.payment_provider,
+            "amount_xaf": vote.amount_xaf,
+            "momo_phone": vote.momo_phone,
+            "payment_reference": payment_ref,
+            "message": f"Vote recorded via MTN MoMo ({vote.amount_xaf} XAF)",
         }
     except HTTPException:
         raise

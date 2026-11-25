@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { motion } from 'framer-motion'
-import type { MoveBlock, StoryBackground, StoryProp, StorySFX, BgMotion } from '../types'
+import type { MoveBlock, StoryBackground, StoryProp, StorySFX, BgMotion, ComicExpression } from '../types'
 import { storySFX } from '../lib/audioUtils'
-import { LottieCharacter } from './LottieCharacter'
-import { getLottieStageMotion, LOTTIE_STAGE_SPRING } from '../lib/lottieActions'
+import { ComicCharacter, expressionFromAction, normalizeComicCharacterId } from './ComicCharacter'
 
 export type BackgroundTheme = StoryBackground
 
@@ -31,19 +30,6 @@ export interface StagePlayerProps {
   aspectRatio?: string
   mode?: 'studio' | 'playback' | 'compact'
   audioElement?: HTMLAudioElement | null
-}
-
-// Normalize character ID to match asset names
-function normalizeCharacterId(rawId?: string | null): 'tantie' | 'mboa_boy' | 'pa_buea' {
-  if (!rawId) return 'tantie'
-  const lower = rawId.toLowerCase().trim()
-  if (lower.includes('tantie') || lower.includes('girl') || lower.includes('mama')) {
-    return 'tantie'
-  }
-  if (lower.includes('buea') || lower.includes('pa') || lower.includes('elder')) {
-    return 'pa_buea'
-  }
-  return 'mboa_boy'
 }
 
 // -------------------------------------------------------------
@@ -367,7 +353,7 @@ const ScenePropOverlay: React.FC<{ prop?: StoryProp | string }> = ({ prop }) => 
 }
 
 // -------------------------------------------------------------
-// 3. Main StagePlayer Component (Puppet-Rigged 60fps Stage)
+// 3. Main StagePlayer Component (Motion-Comic Stage Engine)
 // -------------------------------------------------------------
 
 export const StagePlayer: React.FC<StagePlayerProps> = ({
@@ -394,10 +380,6 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
   audioElement = null,
   className = '',
 }) => {
-  const normCharA = normalizeCharacterId(characterAId || characterId || 'tantie')
-  const normCharB = characterBId && characterBId !== 'none' ? normalizeCharacterId(characterBId) : null
-  const hasCharB = Boolean(normCharB)
-
   const [rafTime, setRafTime] = useState(0)
 
   // Auto-fading reaction sticker state (1.5s auto-fade)
@@ -454,35 +436,60 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
 
   const clipDuration = Math.max(clipEnd - clipStart, 0.5)
 
-  // Sync to HTML5 <audio>.currentTime via requestAnimationFrame for buttery responsiveness
+  // Sync to HTML5 <audio>.currentTime via requestAnimationFrame, with fallback timer if muted/unavailable
   const isLoopingRef = useRef(false)
   const lastRafTimeRef = useRef(0)
+  const fallbackTimeRef = useRef(clipStart)
+  const lastFrameTsRef = useRef<number | null>(null)
 
   useEffect(() => {
-    if (!isPlaying || !audioElement) {
+    if (!isPlaying) {
       isLoopingRef.current = false
+      lastFrameTsRef.current = null
+      fallbackTimeRef.current = currentTime >= clipStart && currentTime < clipEnd ? currentTime : clipStart
       return
     }
 
-    let rafId: number
-    const loop = () => {
-      if (audioElement && !isNaN(audioElement.currentTime)) {
-        const cur = audioElement.currentTime
+    fallbackTimeRef.current = currentTime >= clipStart && currentTime < clipEnd ? currentTime : clipStart
+    lastFrameTsRef.current = performance.now()
 
-        // End of cropped clip reached -> loop or stop cleanly without multi-frame seek thrashing
-        if (cur >= clipEnd) {
-          if (!isLoopingRef.current) {
-            isLoopingRef.current = true
-            if (mode === 'studio') {
+    let rafId: number
+    const loop = (now: number) => {
+      const dt = lastFrameTsRef.current ? Math.min(0.1, (now - lastFrameTsRef.current) / 1000) : 0
+      lastFrameTsRef.current = now
+
+      const audioActive =
+        audioElement &&
+        !isNaN(audioElement.currentTime) &&
+        !audioElement.paused &&
+        !audioElement.ended
+
+      let cur: number
+      if (audioActive && audioElement) {
+        cur = audioElement.currentTime
+        fallbackTimeRef.current = cur
+      } else {
+        fallbackTimeRef.current += dt
+        cur = fallbackTimeRef.current
+      }
+
+      // End of cropped clip reached -> loop or stop cleanly
+      if (cur >= clipEnd) {
+        if (!isLoopingRef.current) {
+          isLoopingRef.current = true
+          if (mode === 'studio') {
+            if (audioElement) {
               try {
                 audioElement.currentTime = clipStart
               } catch (e) {
                 console.warn('Seek error during loop:', e)
               }
-              lastRafTimeRef.current = clipStart
-              setRafTime(clipStart)
+            }
+            fallbackTimeRef.current = clipStart
+            lastRafTimeRef.current = clipStart
+            setRafTime(clipStart)
 
-              // Wait for seeked event or fallback timer before allowing next loop check
+            if (audioElement) {
               const onSeeked = () => {
                 audioElement.removeEventListener('seeked', onSeeked)
                 isLoopingRef.current = false
@@ -492,24 +499,28 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
                 isLoopingRef.current = false
               }, 250)
             } else {
+              isLoopingRef.current = false
+            }
+          } else {
+            if (audioElement) {
               audioElement.pause()
               try {
                 audioElement.currentTime = clipStart
               } catch {}
-              lastRafTimeRef.current = clipStart
-              setRafTime(clipStart)
-              isLoopingRef.current = false
-              if (onTogglePlay) onTogglePlay()
-              return
             }
+            fallbackTimeRef.current = clipStart
+            lastRafTimeRef.current = clipStart
+            setRafTime(clipStart)
+            isLoopingRef.current = false
+            if (onTogglePlay) onTogglePlay()
+            return
           }
-        } else {
-          // Normal playback progression: throttle React state updates to ~25-30fps
-          // to eliminate main-thread congestion and audio buffer underruns
-          if (Math.abs(cur - lastRafTimeRef.current) >= 0.035) {
-            lastRafTimeRef.current = cur
-            setRafTime(cur)
-          }
+        }
+      } else {
+        // Throttle React state updates to ~25-30fps for smooth performance
+        if (Math.abs(cur - lastRafTimeRef.current) >= 0.035) {
+          lastRafTimeRef.current = cur
+          setRafTime(cur)
         }
       }
       rafId = requestAnimationFrame(loop)
@@ -519,34 +530,44 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
     return () => {
       cancelAnimationFrame(rafId)
       isLoopingRef.current = false
+      lastFrameTsRef.current = null
     }
   }, [isPlaying, audioElement, clipStart, clipEnd, mode, onTogglePlay])
 
-  // Effective time used for rhythm & moves
-  const effectiveTime = isPlaying && audioElement ? rafTime : currentTime
+  // Effective time used for scene playback
+  const effectiveTime = isPlaying ? rafTime : currentTime
 
-  // Continuous BPM duration
-  const safeBpm = Math.max(bpm || 110, 40)
-  const halfBeatDuration = useMemo(() => 30 / safeBpm, [safeBpm])
-  const halfBeatIndex = Math.floor(effectiveTime / halfBeatDuration)
-  const isPoseB = isPlaying ? halfBeatIndex % 2 === 1 : false
-
-  // Active scene block determination from movesTimeline
-  const activeBlock = useMemo(() => {
-    if (!movesTimeline || movesTimeline.length === 0) return null
-    return (
-      movesTimeline.find((m) => effectiveTime >= m.start && effectiveTime < m.end) ||
-      movesTimeline[0]
-    )
+  // Active scene block & index determination from movesTimeline
+  const activeSceneIndex = useMemo(() => {
+    if (!movesTimeline || movesTimeline.length === 0) return 0
+    const idx = movesTimeline.findIndex((m) => effectiveTime >= m.start && effectiveTime < m.end)
+    return idx !== -1 ? idx : 0
   }, [movesTimeline, effectiveTime])
 
-  // Extract Scene Properties
-  const actionA: string = (activeBlock?.charA_action || activeBlock?.action || 'approach')
-  const actionB: string = (activeBlock?.charB_action || (hasCharB ? 'turn_around' : 'none'))
-  const activeBg: StoryBackground | string = (activeBlock?.bg || backgroundTheme || 'street_buea')
-  const activeBgMotion: BgMotion = (activeBlock?.bgMotion || bgMotion || 'static')
-  const activeProp: StoryProp | string = (activeBlock?.prop || prop || 'none')
-  const dialogueA: string | undefined = activeBlock?.dialogueA || captionA || (!activeBlock?.dialogueB ? caption : undefined)
+  const activeBlock = movesTimeline?.[activeSceneIndex] || null
+
+  // Per-scene character resolution (falls back to StagePlayer props)
+  const normCharA = normalizeComicCharacterId(
+    activeBlock?.charA_id || characterAId || characterId || 'mboa_boy'
+  )
+  const rawCharB =
+    activeBlock?.charB_id !== undefined ? activeBlock.charB_id : characterBId
+  const normCharB =
+    rawCharB && rawCharB !== 'none' ? normalizeComicCharacterId(rawCharB) : null
+  const hasCharB = Boolean(normCharB)
+
+  // Extract Scene Properties & Expressions
+  const actionA: string = activeBlock?.charA_action || activeBlock?.action || 'approach'
+  const actionB: string = activeBlock?.charB_action || (hasCharB ? 'turn_around' : 'none')
+  const exprA: ComicExpression =
+    (activeBlock?.charA_expression as ComicExpression) || expressionFromAction(actionA)
+  const exprB: ComicExpression =
+    (activeBlock?.charB_expression as ComicExpression) || expressionFromAction(actionB)
+  const activeBg: StoryBackground | string = activeBlock?.bg || backgroundTheme || 'street_buea'
+  const activeBgMotion: BgMotion = activeBlock?.bgMotion || bgMotion || 'static'
+  const activeProp: StoryProp | string = activeBlock?.prop || prop || 'none'
+  const dialogueA: string | undefined =
+    activeBlock?.dialogueA || captionA || (!activeBlock?.dialogueB ? caption : undefined)
   const dialogueB: string | undefined = activeBlock?.dialogueB || captionB
 
   // Sound Effects (SFX) trigger once on block entry
@@ -557,23 +578,13 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
       return
     }
     if (!activeBlock) return
-    const blockIndex = movesTimeline ? movesTimeline.indexOf(activeBlock) : -1
-    if (blockIndex !== -1 && blockIndex !== lastPlayedSFXBlockRef.current) {
-      lastPlayedSFXBlockRef.current = blockIndex
+    if (activeSceneIndex !== -1 && activeSceneIndex !== lastPlayedSFXBlockRef.current) {
+      lastPlayedSFXBlockRef.current = activeSceneIndex
       if (activeBlock.sfx && activeBlock.sfx !== 'none') {
         storySFX.play(activeBlock.sfx as StorySFX)
       }
     }
-  }, [isPlaying, activeBlock, movesTimeline])
-
-  // Compute smooth Framer Motion stage coordinate glides & rotations for Lottie positioning wrappers
-  const motionA = useMemo(() => {
-    return getLottieStageMotion(actionA, false, isPoseB)
-  }, [actionA, isPoseB])
-
-  const motionB = useMemo(() => {
-    return getLottieStageMotion(actionB, true, isPoseB)
-  }, [actionB, isPoseB])
+  }, [isPlaying, activeBlock, activeSceneIndex])
 
   // Render Background Environment
   const renderBackground = () => {
@@ -618,71 +629,94 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
         }
       `}</style>
 
-      {/* Camera Zoom Stage Wrapper */}
+      {/* Camera Pan/Zoom Stage Wrapper */}
       <div
         className={`relative w-full h-full transition-transform duration-700 ease-out origin-center ${
-          activeBgMotion === 'zoom_in' ? 'scale-[1.14]' : 'scale-100'
+          activeBgMotion === 'zoom_in' ? 'scale-[1.12]' : 'scale-100'
         }`}
       >
-        {/* 1. Theme Story Background */}
-        {renderBackground()}
+        {/* 1. Theme Story Background with subtle smooth cinematic pan/zoom */}
+        <motion.div
+          key={`bg-${activeBg}-${activeSceneIndex}`}
+          initial={{ opacity: 0.85, scale: 1.02 }}
+          animate={
+            isPlaying
+              ? {
+                  opacity: 1,
+                  scale: [1.0, 1.06, 1.03],
+                  x: [0, -8, 6, 0],
+                }
+              : { opacity: 1, scale: 1, x: 0 }
+          }
+          transition={
+            isPlaying
+              ? {
+                  opacity: { duration: 0.35 },
+                  scale: { duration: 8, repeat: Infinity, ease: 'easeInOut' },
+                  x: { duration: 10, repeat: Infinity, ease: 'easeInOut' },
+                }
+              : { duration: 0.3 }
+          }
+          className="absolute inset-0 w-full h-full"
+        >
+          {renderBackground()}
+        </motion.div>
 
         {/* 2. Scene Center Prop (SVG Overlay) */}
         <ScenePropOverlay prop={activeProp} />
 
-        {/* 3. Top Centered Mini Pill (BPM + Scene Action) */}
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 pointer-events-none">
+        {/* 3. Top Centered Mini Pill (Scene + Cast + BPM) */}
+        <div className="hidden sm:flex absolute top-2 left-1/2 -translate-x-1/2 z-30 items-center gap-1.5 pointer-events-none">
           <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-black/60 backdrop-blur-md text-[10px] font-semibold text-white border border-white/10 shadow">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="capitalize">{normCharA.replace('_', ' ')}</span>
-            {normCharB && (
-              <>
-                <span className="text-neutral-400">&</span>
-                <span className="capitalize">{normCharB.replace('_', ' ')}</span>
-              </>
-            )}
+            <span>Scene {activeSceneIndex + 1}</span>
             <span className="text-neutral-400">·</span>
             <span className="font-mono text-[#FACC15]">{bpm} BPM</span>
           </div>
-
-          {isPlaying && (
-            <div className="px-2 py-0.5 rounded-full bg-neutral-900/80 backdrop-blur-md text-[9px] font-bold text-white uppercase tracking-wider border border-[#F43F5E]/40 flex items-center gap-1 shadow">
-              <span className="text-[#F43F5E]">✦</span>
-              <span>{actionA}</span>
-            </div>
-          )}
         </div>
 
         {/* 4. Comic Speech Dialogue A: Top-Left (Tail pointing down-left toward Character A) */}
         {dialogueA && dialogueA.trim().length > 0 && (
-          <div className="absolute top-2.5 left-3 max-w-[44%] z-20 flex flex-col items-start pointer-events-none animate-comic-pop">
+          <motion.div
+            key={`dlgA-${activeSceneIndex}-${dialogueA}`}
+            initial={{ opacity: 0, scale: 0.78, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 450, damping: 24 }}
+            className="absolute top-3 left-3 max-w-[44%] z-20 flex flex-col items-start pointer-events-none"
+          >
             <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-left tracking-tight leading-snug">
               "{dialogueA}"
-              {/* Tail pointing down-left */}
-              <svg className="absolute -bottom-2.5 left-3 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
+              {/* Tail pointing down-left toward Character 1 */}
+              <svg className="absolute -bottom-2.5 left-4 w-4 h-3.5 text-neutral-950 -rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
                 <path d="M0 0 L16 0 L4 14 Z" />
               </svg>
-              <svg className="absolute -bottom-2 left-3.5 w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
+              <svg className="absolute -bottom-2 left-[18px] w-3.5 h-3 text-white -rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
                 <path d="M0 0 L14 0 L3 12 Z" />
               </svg>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* 5. Comic Speech Dialogue B: Top-Right (Tail pointing down-right toward Character B) */}
         {dialogueB && dialogueB.trim().length > 0 && (
-          <div className="absolute top-2.5 right-3 max-w-[44%] z-20 flex flex-col items-end pointer-events-none animate-comic-pop">
+          <motion.div
+            key={`dlgB-${activeSceneIndex}-${dialogueB}`}
+            initial={{ opacity: 0, scale: 0.78, y: -6 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 450, damping: 24, delay: 0.05 }}
+            className="absolute top-3 right-3 max-w-[44%] z-20 flex flex-col items-end pointer-events-none"
+          >
             <div className="relative bg-white text-neutral-950 font-black text-[11px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl border-[2.5px] border-neutral-950 shadow-[3px_3px_0px_#000] text-right tracking-tight leading-snug">
               "{dialogueB}"
-              {/* Tail pointing down-right */}
-              <svg className="absolute -bottom-2.5 right-3 w-4 h-3.5 text-neutral-950 rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
+              {/* Tail pointing down-right toward Character 2 */}
+              <svg className="absolute -bottom-2.5 right-4 w-4 h-3.5 text-neutral-950 rotate-[15deg] pointer-events-none" viewBox="0 0 16 14" fill="currentColor">
                 <path d="M0 0 L16 0 L12 14 Z" />
               </svg>
-              <svg className="absolute -bottom-2 right-3.5 w-3.5 h-3 text-white rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
+              <svg className="absolute -bottom-2 right-[18px] w-3.5 h-3 text-white rotate-[15deg] pointer-events-none" viewBox="0 0 14 12" fill="currentColor">
                 <path d="M0 0 L14 0 L11 12 Z" />
               </svg>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* 6. Reaction Sticker: Bottom-Left (1.5s Auto-Fade) */}
@@ -700,55 +734,43 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           </div>
         )}
 
-        {/* 7. Character Stage Arena: Persistent 60fps Lottie & Spring Kinematics Characters */}
-        <div className="absolute inset-0 z-10 flex items-end justify-center pt-10 pb-3 sm:pb-4 pointer-events-none overflow-hidden">
-          {/* CHARACTER A (Left side in 2-char mode, or centered in solo mode) */}
+        {/* 7. Motion-Comic Character Stage: Crisp Pop-In on Scene Switch */}
+        <div className="absolute inset-0 z-10 flex items-end justify-center pt-12 pb-2 sm:pb-3 pointer-events-none overflow-hidden">
+          {/* CHARACTER 1 (Left side in 2-char mode, or centered in solo mode) */}
           <motion.div
-            className={`absolute bottom-3 sm:bottom-4 flex items-end justify-center ${
+            key={`charA-${activeSceneIndex}-${normCharA}-${exprA}`}
+            className={`absolute bottom-2 sm:bottom-3 flex items-end justify-center ${
               hasCharB
-                ? 'left-[8%] sm:left-[14%] w-36 sm:w-48 md:w-56 h-[74%] sm:h-[84%]'
-                : 'left-1/2 -translate-x-1/2 w-44 sm:w-56 md:w-64 h-[76%] sm:h-[86%]'
+                ? 'left-[6%] sm:left-[12%] w-32 sm:w-44 md:w-52 h-[66%] sm:h-[74%]'
+                : 'left-1/2 -translate-x-1/2 w-40 sm:w-52 md:w-60 h-[70%] sm:h-[76%]'
             }`}
-            animate={{
-              x: motionA.x,
-              y: motionA.y,
-              rotate: motionA.rotate,
-              scaleX: motionA.scaleX,
-            }}
-            transition={LOTTIE_STAGE_SPRING}
+            initial={{ opacity: 0, scale: 0.84, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 24 }}
             style={{ transformOrigin: 'bottom center' }}
           >
-            <LottieCharacter
+            <ComicCharacter
               characterId={normCharA}
-              action={actionA}
-              facingLeft={false}
-              isPoseB={isPoseB}
-              prop={activeProp}
-              isPlaying={isPlaying}
+              expression={exprA}
+              flip={false}
               className="w-full h-full"
             />
           </motion.div>
 
-          {/* CHARACTER B (Right side, facing left) */}
+          {/* CHARACTER 2 (Right side, mirrored via flip={true} to face Character 1) */}
           {hasCharB && normCharB && (
             <motion.div
-              className="absolute bottom-3 sm:bottom-4 right-[8%] sm:right-[14%] w-36 sm:w-48 md:w-56 h-[74%] sm:h-[84%] flex items-end justify-center"
-              animate={{
-                x: motionB.x,
-                y: motionB.y,
-                rotate: motionB.rotate,
-                scaleX: motionB.scaleX,
-              }}
-              transition={LOTTIE_STAGE_SPRING}
+              key={`charB-${activeSceneIndex}-${normCharB}-${exprB}`}
+              className="absolute bottom-2 sm:bottom-3 right-[6%] sm:right-[12%] w-32 sm:w-44 md:w-52 h-[66%] sm:h-[74%] flex items-end justify-center"
+              initial={{ opacity: 0, scale: 0.84, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 24, delay: 0.04 }}
               style={{ transformOrigin: 'bottom center' }}
             >
-              <LottieCharacter
+              <ComicCharacter
                 characterId={normCharB}
-                action={actionB}
-                facingLeft={true}
-                isPoseB={isPoseB}
-                prop={activeProp}
-                isPlaying={isPlaying}
+                expression={exprB}
+                flip={true}
                 className="w-full h-full"
               />
             </motion.div>
@@ -766,11 +788,14 @@ export const StagePlayer: React.FC<StagePlayerProps> = ({
           }}
           className="absolute inset-0 z-30 bg-black/35 hover:bg-black/20 transition-all flex items-center justify-center cursor-pointer group/btn"
         >
-          <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/90 group-hover/btn:bg-white text-neutral-950 flex items-center justify-center shadow-2xl group-hover/btn:scale-110 active:scale-95 transition-transform">
+          <motion.div
+            whileTap={{ scale: 0.92 }}
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/90 group-hover/btn:bg-white text-neutral-950 flex items-center justify-center shadow-2xl group-hover/btn:scale-110 transition-transform"
+          >
             <svg className="w-8 h-8 sm:w-10 sm:h-10 fill-current translate-x-1" viewBox="0 0 24 24">
               <path d="M8 5v14l11-7z" />
             </svg>
-          </div>
+          </motion.div>
         </div>
       )}
 

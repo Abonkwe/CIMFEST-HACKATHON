@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { AnimatePresence, LayoutGroup, motion } from 'framer-motion'
 import type { Challenge, Creation } from '../types'
 import {
   castVote,
@@ -11,12 +12,24 @@ import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { useLanguage } from '../context/LanguageContext'
 import { ReportModal } from '../components/ReportModal'
+import { MomoVoteModal } from '../components/MomoVoteModal'
 import { StagePlayer, type BackgroundTheme } from '../components/StagePlayer'
 
-export const FeedScreen: React.FC = () => {
+interface FeedScreenProps {
+  challengeId?: string | null
+  onNavigateTab?: (tab: string, params?: { challenge_id?: string | null; song_id?: string | null }) => void
+}
+
+export const FeedScreen: React.FC<FeedScreenProps> = ({ challengeId, onNavigateTab }) => {
   const { user, token, openLoginModal } = useAuth()
   const { playSong, pauseSong, isPlaying, currentTime, audioElement } = useAudio()
   const { t } = useLanguage()
+
+  const effectiveChallengeId =
+    challengeId ||
+    (typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('challenge_id')
+      : null)
 
   const [feedItems, setFeedItems] = useState<Creation[]>([])
   const [activeCreationId, setActiveCreationId] = useState<string | null>(null)
@@ -27,6 +40,8 @@ export const FeedScreen: React.FC = () => {
 
   // Report modal state
   const [reportingTarget, setReportingTarget] = useState<{ id: string; title: string } | null>(null)
+  const [votingTarget, setVotingTarget] = useState<Creation | null>(null)
+  const [momoModalError, setMomoModalError] = useState<string | null>(null)
 
   // Track voted creation IDs locally to provide instant feedback
   const [votedIds, setVotedIds] = useState<Set<string>>(() => {
@@ -36,20 +51,23 @@ export const FeedScreen: React.FC = () => {
   const [voteErrors, setVoteErrors] = useState<Record<string, string>>({})
   const [votingId, setVotingId] = useState<string | null>(null)
 
-  // Load feed and active challenge
+  // Load feed and active challenge (filtered when effectiveChallengeId is present)
   useEffect(() => {
     let mounted = true
     const loadFeed = async () => {
       setLoading(true)
       try {
         const [creations, challenges] = await Promise.all([
-          fetchFeed(),
+          fetchFeed(effectiveChallengeId),
           fetchActiveChallenges(),
         ])
         if (!mounted) return
         setFeedItems(creations)
         if (challenges && challenges.length > 0) {
-          setActiveChallenge(challenges[0])
+          const matched = effectiveChallengeId
+            ? challenges.find((c) => c.id === effectiveChallengeId)
+            : null
+          setActiveChallenge(matched || challenges[0])
         }
       } catch (err) {
         console.warn('Failed loading feed:', err)
@@ -61,7 +79,7 @@ export const FeedScreen: React.FC = () => {
     return () => {
       mounted = false
     }
-  }, [])
+  }, [effectiveChallengeId])
 
   // Load mobile leaderboard when active challenge changes
   useEffect(() => {
@@ -84,8 +102,8 @@ export const FeedScreen: React.FC = () => {
     }
   }, [activeChallenge, mobileLeaderboardTab])
 
-  // Handle Voting (FR-26, FR-27, NFR-9)
-  const handleVote = async (creation: Creation) => {
+  // Handle Voting: opens MTN Mobile Money payment modal (FR-26, FR-27, NFR-9)
+  const handleVote = (creation: Creation) => {
     if (!token || !user) {
       openLoginModal('Sign in to vote on creations')
       return
@@ -99,31 +117,43 @@ export const FeedScreen: React.FC = () => {
       return
     }
 
-    setVotingId(creation.id)
+    setMomoModalError(null)
+    setVotingTarget(creation)
+  }
+
+  const handleConfirmMomoVote = async (payment: { momo_phone: string; amount_xaf: number }) => {
+    if (!votingTarget || !token || !user) return
+
+    const targetId = votingTarget.id
+    setVotingId(targetId)
+    setMomoModalError(null)
     setVoteErrors((prev) => {
       const copy = { ...prev }
-      delete copy[creation.id]
+      delete copy[targetId]
       return copy
     })
 
     try {
-      const res = await castVote(creation.id, token)
+      const res = await castVote(targetId, token, payment)
 
-      // Update feed item vote count optimistically
+      // Update feed item vote count
       setFeedItems((prev) =>
         prev.map((item) =>
-          item.id === creation.id ? { ...item, vote_count: res.vote_count } : item
+          item.id === targetId ? { ...item, vote_count: res.vote_count } : item
         )
       )
 
       // Update voted set
-      const nextVoted = new Set(votedIds).add(creation.id)
+      const nextVoted = new Set(votedIds).add(targetId)
       setVotedIds(nextVoted)
       localStorage.setItem('beattoons_voted_ids', JSON.stringify(Array.from(nextVoted)))
+      setVotingTarget(null)
     } catch (err: any) {
+      const msg = err?.message || 'MTN MoMo payment or vote failed.'
+      setMomoModalError(msg)
       setVoteErrors((prev) => ({
         ...prev,
-        [creation.id]: err?.message || 'Vote failed. Only 1 vote per account allowed.',
+        [targetId]: msg,
       }))
     } finally {
       setVotingId(null)
@@ -191,16 +221,67 @@ export const FeedScreen: React.FC = () => {
         </div>
       </div>
 
+      {/* Active Challenge Filter Banner */}
+      {effectiveChallengeId && (
+        <div className="rounded-2xl bg-[#536D56]/20 border border-[#536D56]/50 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-base shrink-0">🏆</span>
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#FACC15]">
+                Challenge Filter Active
+              </div>
+              <div className="text-sm font-bold text-white truncate">
+                Showing Challenge Entries:{' '}
+                {activeChallenge?.id === effectiveChallengeId
+                  ? activeChallenge.title ||
+                    `${activeChallenge.song?.artist_name || ''} — ${
+                      activeChallenge.song?.title || 'Challenge'
+                    }`
+                  : feedItems[0]?.challenge_title ||
+                    feedItems[0]?.song?.title ||
+                    'Selected Challenge'}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab?.('feed', { challenge_id: null })}
+            className="self-start sm:self-center shrink-0 px-4 py-1.5 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 text-xs font-bold transition shadow cursor-pointer"
+          >
+            Show All Feed Posts
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="py-20 text-center">
           <span className="inline-block w-6 h-6 border-2 border-[#536D56] border-t-transparent rounded-full animate-spin mb-3" />
           <p className="text-xs text-neutral-400">Loading animated creations...</p>
         </div>
       ) : feedItems.length === 0 ? (
-        <div className="p-8 rounded-3xl bg-[#121212] border border-neutral-800 text-center space-y-2">
+        <div className="p-8 rounded-3xl bg-[#121212] border border-neutral-800 text-center space-y-3">
           <div className="text-3xl">🎭</div>
-          <h3 className="text-base font-bold text-white">No creations yet in the feed</h3>
-          <p className="text-xs text-neutral-400">Be the first to animate a character in Studio!</p>
+          <h3 className="text-base font-bold text-white">
+            {effectiveChallengeId
+              ? 'No entries yet for this challenge'
+              : 'No creations yet in the feed'}
+          </h3>
+          <p className="text-xs text-neutral-400">
+            {effectiveChallengeId
+              ? 'Be the first creator to publish an animation for this challenge!'
+              : 'Be the first to animate a character in Studio!'}
+          </p>
+          {effectiveChallengeId && (
+            <button
+              type="button"
+              onClick={() =>
+                onNavigateTab?.('studio', { challenge_id: effectiveChallengeId })
+              }
+              className="mt-2 px-5 py-2 rounded-full bg-white hover:bg-neutral-100 text-neutral-900 text-xs font-bold transition cursor-pointer"
+            >
+              Join This Challenge in Studio ✦
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-6 max-w-3xl xl:max-w-4xl mx-auto">
@@ -339,42 +420,55 @@ export const FeedScreen: React.FC = () => {
                   {/* Actions: WhatsApp Share + Vote Button */}
                   <div className="flex items-center gap-2.5">
                     {/* WhatsApp Share Link (FR-25) */}
-                    <button
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
                       onClick={() => handleShareWhatsApp(item)}
                       className="px-3.5 py-2 rounded-full bg-[#25D366]/15 hover:bg-[#25D366]/25 border border-[#25D366]/30 text-[#25D366] text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
                       title={t('shareWhatsapp')}
                     >
                       <span>💬</span>
                       <span className="hidden sm:inline">WhatsApp</span>
-                    </button>
+                    </motion.button>
 
                     {/* Vote Button (POST /votes, FR-26, FR-27) */}
-                    <button
+                    <motion.button
+                      whileTap={hasVoted || isVotingThis ? undefined : { scale: 0.92 }}
                       onClick={() => handleVote(item)}
                       disabled={hasVoted || isVotingThis}
-                      className={`px-5 py-2 rounded-full font-bold text-xs transition-all flex items-center gap-1.5 shadow-md active:scale-95 cursor-pointer ${
+                      className={`px-5 py-2 rounded-full font-bold text-xs transition-colors flex items-center gap-1.5 shadow-md cursor-pointer ${
                         hasVoted
                           ? 'bg-[#536D56] text-white cursor-default'
                           : 'bg-white hover:bg-neutral-100 text-neutral-900'
                       }`}
                     >
-                      {isVotingThis ? (
-                        <>
-                          <span className="w-3.5 h-3.5 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
-                          <span>Voting...</span>
-                        </>
-                      ) : hasVoted ? (
-                        <>
-                          <span>✓</span>
-                          <span>{t('voted')}</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-[#F43F5E]">✦</span>
-                          <span>{t('vote')}</span>
-                        </>
-                      )}
-                    </button>
+                      <AnimatePresence mode="wait" initial={false}>
+                        <motion.span
+                          key={isVotingThis ? 'voting' : hasVoted ? 'voted' : 'vote'}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          transition={{ duration: 0.15 }}
+                          className="flex items-center gap-1.5"
+                        >
+                          {isVotingThis ? (
+                            <>
+                              <span className="w-3.5 h-3.5 border-2 border-neutral-900 border-t-transparent rounded-full animate-spin" />
+                              <span>Voting...</span>
+                            </>
+                          ) : hasVoted ? (
+                            <>
+                              <span>✓</span>
+                              <span>{t('voted')}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-[#F43F5E]">✦</span>
+                              <span>{t('vote')}</span>
+                            </>
+                          )}
+                        </motion.span>
+                      </AnimatePresence>
+                    </motion.button>
                   </div>
                 </div>
               </div>
@@ -396,29 +490,47 @@ export const FeedScreen: React.FC = () => {
             </div>
 
             {/* Tabs for mobile leaderboard */}
-            <div className="grid grid-cols-2 gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-xl">
-              <button
-                onClick={() => setMobileLeaderboardTab('top')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer ${
-                  mobileLeaderboardTab === 'top'
-                    ? 'bg-[#536D56] text-white shadow'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                {t('tabTop')}
-              </button>
-              <button
-                onClick={() => setMobileLeaderboardTab('rising')}
-                className={`py-1.5 px-2 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1 ${
-                  mobileLeaderboardTab === 'rising'
-                    ? 'bg-[#536D56] text-white shadow'
-                    : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                <span>{t('tabRising')}</span>
-                <span className="text-[10px] text-[#FACC15]">⚡</span>
-              </button>
-            </div>
+            <LayoutGroup id="mobile-leaderboard-tabs">
+              <div className="grid grid-cols-2 gap-1 p-1 bg-neutral-900 border border-neutral-800 rounded-xl">
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => setMobileLeaderboardTab('top')}
+                  className={`relative py-1.5 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    mobileLeaderboardTab === 'top'
+                      ? 'text-white'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  {mobileLeaderboardTab === 'top' && (
+                    <motion.span
+                      layoutId="mobile-leaderboard-tab-pill"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      className="absolute inset-0 rounded-lg bg-[#536D56] shadow"
+                    />
+                  )}
+                  <span className="relative z-10">{t('tabTop')}</span>
+                </motion.button>
+                <motion.button
+                  whileTap={{ scale: 0.92 }}
+                  onClick={() => setMobileLeaderboardTab('rising')}
+                  className={`relative py-1.5 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1 ${
+                    mobileLeaderboardTab === 'rising'
+                      ? 'text-white'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  {mobileLeaderboardTab === 'rising' && (
+                    <motion.span
+                      layoutId="mobile-leaderboard-tab-pill"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      className="absolute inset-0 rounded-lg bg-[#536D56] shadow"
+                    />
+                  )}
+                  <span className="relative z-10">{t('tabRising')}</span>
+                  <span className="relative z-10 text-[10px] text-[#FACC15]">⚡</span>
+                </motion.button>
+              </div>
+            </LayoutGroup>
 
             {/* Mobile rankings list */}
             <div className="space-y-2">
@@ -485,6 +597,19 @@ export const FeedScreen: React.FC = () => {
           targetTitle={reportingTarget.title}
         />
       )}
+
+      {/* MTN Mobile Money Vote Payment Modal */}
+      <MomoVoteModal
+        creation={votingTarget}
+        defaultPhone={user?.phone || ''}
+        isSubmitting={!!votingTarget && votingId === votingTarget.id}
+        error={momoModalError}
+        onClose={() => {
+          setVotingTarget(null)
+          setMomoModalError(null)
+        }}
+        onConfirmPayAndVote={handleConfirmMomoVote}
+      />
     </div>
   )
 }

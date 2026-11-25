@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
-import type { Challenge, MoveBlock, StoryProp, StorySFX } from '../types'
+import { AnimatePresence, motion } from 'framer-motion'
+import type { Challenge, ComicExpression, MoveBlock, StoryProp, StorySFX } from '../types'
 import { fetchActiveChallenges, fetchTrendingSongs, submitCreation } from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import { useAudio } from '../context/AudioContext'
 import { StagePlayer } from '../components/StagePlayer'
+import { ComicCharacter, COMIC_EXPRESSIONS, expressionFromAction } from '../components/ComicCharacter'
 import {
   STORY_TEMPLATES,
-  STORY_ACTIONS,
+  COMIC_STARTER_CHIPS,
   STORY_BACKGROUNDS,
   BG_MOTIONS,
   STORY_PROPS,
@@ -17,7 +19,8 @@ import {
 } from '../lib/storyTemplates'
 
 interface StudioPageProps {
-  onNavigateTab: (tab: string) => void
+  challengeId?: string | null
+  onNavigateTab: (tab: string, params?: { challenge_id?: string | null; song_id?: string | null }) => void
 }
 
 const CHARACTERS: {
@@ -54,25 +57,17 @@ const CHARACTERS: {
   },
 ]
 
-// Circular Character Avatar rendering Open Peeps SVG with fallback
+// Circular Character Avatar rendering ComicCharacter SVG
 const CharacterAvatarCircle: React.FC<{
   characterId: string
-  displayName: string
-  fallbackEmoji: string
-}> = ({ characterId, displayName, fallbackEmoji }) => {
-  const [hasError, setHasError] = useState(false)
-
-  if (hasError) {
-    return <span className="text-2xl sm:text-3xl select-none">{fallbackEmoji}</span>
-  }
-
+  expression?: ComicExpression | string
+}> = ({ characterId, expression = 'happy' }) => {
   return (
-    <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-neutral-700/50 to-neutral-800 flex items-center justify-center">
-      <img
-        src={`/assets/characters/${characterId}_pose_a.svg`}
-        alt={displayName}
-        onError={() => setHasError(true)}
-        className="w-full h-full object-cover object-top scale-[1.75] translate-y-3 sm:translate-y-3.5 pointer-events-none select-none"
+    <div className="w-full h-full relative overflow-hidden bg-gradient-to-b from-neutral-700/50 to-neutral-800 flex items-end justify-center">
+      <ComicCharacter
+        characterId={characterId}
+        expression={expression}
+        className="w-full h-full scale-[1.25] translate-y-1.5 pointer-events-none select-none"
       />
     </div>
   )
@@ -108,7 +103,7 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
-export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
+export const StudioPage: React.FC<StudioPageProps> = ({ challengeId, onNavigateTab }) => {
   const { user, token, openLoginModal } = useAuth()
   const {
     playSong,
@@ -139,20 +134,20 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
   const [clipStart, setClipStart] = useState<number>(42)
   const [clipEnd, setClipEnd] = useState<number>(58)
 
-  // 2-Character Selection
-  const [characterA, setCharacterA] = useState<'tantie' | 'mboa_boy' | 'pa_buea'>('tantie')
-  const [characterB, setCharacterB] = useState<'tantie' | 'mboa_boy' | 'pa_buea' | 'none'>('mboa_boy')
+  // 2-Character Default Casting (per-scene cast overrides these cleanly)
+  const [characterA, setCharacterA] = useState<'tantie' | 'mboa_boy' | 'pa_buea'>('mboa_boy')
+  const [characterB, setCharacterB] = useState<'tantie' | 'mboa_boy' | 'pa_buea' | 'none'>('tantie')
 
   // Active Scene in the Scene Timeline
   const [activeSceneIndex, setActiveSceneIndex] = useState<number>(0)
 
-  // Initialize Timeline with the first Story Template ("The Unexpected Message") mapped to 0:42 - 0:58
+  // Initialize Timeline with the first Story Template ("Friendly Catch-Up") mapped to 0:42 - 0:58
   const [timelineBlocks, setTimelineBlocks] = useState<MoveBlock[]>(() => {
     return distributeCroppedWindowToScenes(42, 58, STORY_TEMPLATES[0].scenes)
   })
 
   // Selected story template badge indicator
-  const [activeTemplateId, setActiveTemplateId] = useState<string>('unexpected_message')
+  const [activeTemplateId, setActiveTemplateId] = useState<string>('friendly_catch_up')
 
   // Submission state
   const [submitting, setSubmitting] = useState(false)
@@ -162,12 +157,9 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
   // Scrubber container ref for smooth seeking
   const scrubberRef = useRef<HTMLInputElement>(null)
-  const hasInitializedRef = useRef(false)
 
-  // Load active challenges & songs once on mount so signing in mid-edit never resets Studio work
+  // Load active challenges & songs on mount (StrictMode-safe: only locks after state updates)
   useEffect(() => {
-    if (hasInitializedRef.current) return
-    hasInitializedRef.current = true
     let mounted = true
     const initStudio = async () => {
       setLoading(true)
@@ -205,16 +197,28 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
         setChallenges(mergedChallenges)
 
-        // Check if user clicked "Animate" on a specific song in Trending
-        const requestedSongId = localStorage.getItem('beattoons_studio_song_id')
-        if (requestedSongId) {
+        // Check if user clicked "Join Challenge" (via challenge_id) or "Animate" on a song
+        const urlChallengeId =
+          challengeId ||
+          (typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('challenge_id')
+            : null)
+        const requestedSongId =
+          (typeof window !== 'undefined'
+            ? new URLSearchParams(window.location.search).get('song_id')
+            : null) || localStorage.getItem('beattoons_studio_song_id')
+        if (localStorage.getItem('beattoons_studio_song_id')) {
           localStorage.removeItem('beattoons_studio_song_id')
         }
-        const matchedChallenge = requestedSongId
+
+        const matchedByChallenge = urlChallengeId
+          ? mergedChallenges.find((c) => c.id === urlChallengeId)
+          : null
+        const matchedBySong = requestedSongId
           ? mergedChallenges.find((c) => c.song_id === requestedSongId || c.song?.id === requestedSongId)
           : null
 
-        const initialChallenge = matchedChallenge || KOCEE_DEMO_CHALLENGE
+        const initialChallenge = matchedByChallenge || matchedBySong || KOCEE_DEMO_CHALLENGE
         const initialSong = initialChallenge.song || KOCEE_DEMO_SONG
         const initialStart = initialSong.id === KOCEE_DEMO_SONG.id ? 42 : 0
         const initialEnd =
@@ -239,6 +243,25 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     }
   }, [loadSong])
 
+  // Sync if challengeId prop changes after initial mount
+  useEffect(() => {
+    if (!challengeId || challenges.length === 0) return
+    const matched = challenges.find((c) => c.id === challengeId)
+    if (matched && matched.id !== selectedChallenge?.id) {
+      const nextSong = matched.song || KOCEE_DEMO_SONG
+      const nextStart = nextSong.id === KOCEE_DEMO_SONG.id ? 42 : 0
+      const nextEnd =
+        nextSong.id === KOCEE_DEMO_SONG.id
+          ? 58
+          : Math.min(Math.max(nextSong.duration_sec || 20, 12), 24)
+      setSelectedChallenge(matched)
+      setClipStart(nextStart)
+      setClipEnd(nextEnd)
+      setTimelineBlocks((prev) => distributeCroppedWindowToScenes(nextStart, nextEnd, prev))
+      loadSong(nextSong, nextStart)
+    }
+  }, [challengeId, challenges, selectedChallenge?.id, loadSong])
+
   // Current playing song & BPM
   const activeBpm = selectedChallenge?.song?.bpm || currentSong?.bpm || 115
 
@@ -258,6 +281,95 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
     setTimelineBlocks((prev) =>
       prev.map((block, idx) => (idx === activeSceneIndex ? { ...block, ...updates } : block))
     )
+  }
+
+  // Dynamic Scene Count Controls (2 to 8 scenes)
+  const handleSceneCountChange = (targetCount: number) => {
+    const clamped = Math.max(2, Math.min(8, targetCount))
+    setTimelineBlocks((prev) => {
+      if (clamped === prev.length) return prev
+      let next = [...prev]
+      if (clamped > prev.length) {
+        while (next.length < clamped) {
+          const refScene = next[next.length - 1] || prev[0]
+          next.push({
+            start: 0,
+            end: 0,
+            action: 'wave_happy',
+            charA_id: refScene?.charA_id || characterA,
+            charB_id: refScene?.charB_id !== undefined ? refScene.charB_id : (characterB !== 'none' ? characterB : undefined),
+            charA_expression: 'happy',
+            charB_expression: 'happy',
+            bg: refScene?.bg || 'street_buea',
+            bgMotion: 'static',
+            prop: 'none',
+            sfx: 'none',
+            dialogueA: '',
+            dialogueB: '',
+          })
+        }
+      } else {
+        next = next.slice(0, clamped)
+      }
+      return distributeCroppedWindowToScenes(clipStart, clipEnd, next)
+    })
+    setActiveSceneIndex((idx) => Math.min(idx, clamped - 1))
+  }
+
+  // Delete a specific scene (minimum 2 scenes)
+  const handleDeleteScene = (idxToDelete: number) => {
+    if (timelineBlocks.length <= 2) return
+    setTimelineBlocks((prev) => {
+      const filtered = prev.filter((_, idx) => idx !== idxToDelete)
+      return distributeCroppedWindowToScenes(clipStart, clipEnd, filtered)
+    })
+    setActiveSceneIndex((idx) => {
+      if (idx > idxToDelete) return idx - 1
+      return Math.min(idx, timelineBlocks.length - 2)
+    })
+  }
+
+  // Tweak individual scene duration (+/- 0.5s) while keeping total [clipStart, clipEnd] intact
+  const handleAdjustSceneDuration = (delta: number) => {
+    if (timelineBlocks.length < 2) return
+    const minLen = 1.5
+    setTimelineBlocks((prev) => {
+      const next = prev.map((b) => ({ ...b }))
+      const idx = activeSceneIndex
+      const isLast = idx === next.length - 1
+      const neighborIdx = isLast ? idx - 1 : idx + 1
+      const curLen = next[idx].end - next[idx].start
+      const neighborLen = next[neighborIdx].end - next[neighborIdx].start
+
+      if (curLen + delta < minLen || neighborLen - delta < minLen) {
+        return prev
+      }
+
+      if (isLast) {
+        next[idx].start = Number((next[idx].start - delta).toFixed(2))
+        next[neighborIdx].end = next[idx].start
+      } else {
+        next[idx].end = Number((next[idx].end + delta).toFixed(2))
+        next[neighborIdx].start = next[idx].end
+      }
+      return next
+    })
+  }
+
+  // Reset all scenes to equal duration within [clipStart, clipEnd]
+  const handleResetEvenSplit = () => {
+    setTimelineBlocks((prev) => distributeCroppedWindowToScenes(clipStart, clipEnd, prev))
+  }
+
+  // Quick duration preset (8s, 12s, 16s, 20s)
+  const handleDurationPreset = (presetSeconds: number) => {
+    let nextStart = clipStart
+    let nextEnd = nextStart + presetSeconds
+    if (nextEnd > fullSongDuration) {
+      nextEnd = fullSongDuration
+      nextStart = Math.max(0, nextEnd - presetSeconds)
+    }
+    handleCropChange(nextStart, nextEnd)
   }
 
   // 1-Click Apply Story Template (automatically distributed over current cropped slice)
@@ -346,12 +458,14 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
       return
     }
 
-    // Attach charA_id and charB_id to all scene blocks so playback mode is 100% rich
+    // Preserve per-scene characters, expressions, dialogue, and backgrounds in moves_timeline
     const richMovesTimeline = timelineBlocks.map((b) => ({
       ...b,
-      charA_id: characterA,
-      charB_id: characterB !== 'none' ? characterB : undefined,
-      action: b.charA_action || b.action || 'approach',
+      charA_id: b.charA_id || characterA,
+      charB_id: b.charB_id !== undefined ? b.charB_id : (characterB !== 'none' ? characterB : undefined),
+      charA_expression: b.charA_expression || expressionFromAction(b.charA_action || b.action),
+      charB_expression: b.charB_expression || expressionFromAction(b.charB_action),
+      action: b.charA_expression || b.charA_action || b.action || 'happy',
     }))
 
     const firstCaption =
@@ -372,8 +486,9 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
       )
 
       setSubmitSuccess(true)
+      const submittedChallengeId = selectedChallenge.id
       setTimeout(() => {
-        onNavigateTab('feed')
+        onNavigateTab('feed', { challenge_id: submittedChallengeId })
       }, 1000)
     } catch (err: any) {
       console.error('Submission failed:', err)
@@ -392,22 +507,34 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#536D56]/20 border border-[#536D56]/40 text-[#8FA993] text-xs font-semibold uppercase tracking-wider mb-2">
-              <span>🎭 Animation Studio Pro</span>
+              <span>🎨 Comic Storyboard Studio</span>
               <span>·</span>
-              <span>Interactive Storytelling</span>
+              <span>SVG Motion-Comic Engine</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Create Your Animated Story
+              Create Your Comic Story
             </h1>
+            {selectedChallenge && (
+              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FACC15]/15 border border-[#FACC15]/40 text-[#FACC15] text-xs font-bold">
+                <span>🏆</span>
+                <span>
+                  Entering Challenge:{' '}
+                  {selectedChallenge.title ||
+                    `${selectedChallenge.song?.artist_name || 'BeatToons'} — ${
+                      selectedChallenge.song?.title || 'Challenge'
+                    }`}
+                </span>
+              </div>
+            )}
             <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
-              Direct 2-character Cameroonian stories, comic dialogue, moving backgrounds, and real sound effects.
+              Build multi-scene Afro-pop comic stories with custom SVG expressions, speech bubbles, and synced audio.
             </p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs font-mono px-3 py-1.5 rounded-full bg-neutral-900 border border-[#536D56]/40 text-[#8FA993] flex items-center gap-1.5 shadow">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>60fps GPU Engine</span>
+              <span>Instant SVG Engine</span>
             </span>
           </div>
         </div>
@@ -527,52 +654,66 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             {/* Transport Buttons */}
             <div className="flex items-center justify-between pt-1">
               <div className="flex items-center gap-2">
-                <button
+                <motion.button
                   type="button"
+                  whileTap={{ scale: 0.92 }}
                   onClick={() => seek(clipStart)}
-                  className="p-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition active:scale-95 cursor-pointer shadow"
+                  className="p-2.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 transition cursor-pointer shadow"
                   title="Restart to Beginning of Cropped Cut"
                 >
                   <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
                     <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
                   </svg>
-                </button>
+                </motion.button>
 
                 {/* Big Play/Pause Button */}
-                <button
+                <motion.button
                   type="button"
+                  whileTap={{ scale: 0.92 }}
                   onClick={handleTogglePlay}
-                  className="py-2.5 px-6 rounded-full bg-white hover:bg-neutral-100 text-neutral-950 font-black text-xs flex items-center gap-2 shadow-lg active:scale-95 transition cursor-pointer"
+                  className="py-2.5 px-6 rounded-full bg-white hover:bg-neutral-100 text-neutral-950 font-black text-xs flex items-center gap-2 shadow-lg transition cursor-pointer"
                 >
-                  {isPlaying ? (
-                    <>
-                      <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                      </svg>
-                      <span>PAUSE STORY</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4 fill-current translate-x-0.5" viewBox="0 0 24 24">
-                        <path d="M8 5v14l11-7z" />
-                      </svg>
-                      <span>PLAY STORY</span>
-                    </>
-                  )}
-                </button>
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.span
+                      key={isPlaying ? 'pause' : 'play'}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.8 }}
+                      transition={{ duration: 0.15 }}
+                      className="flex items-center gap-2"
+                    >
+                      {isPlaying ? (
+                        <>
+                          <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                          </svg>
+                          <span>PAUSE STORY</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4 fill-current translate-x-0.5" viewBox="0 0 24 24">
+                            <path d="M8 5v14l11-7z" />
+                          </svg>
+                          <span>PLAY STORY</span>
+                        </>
+                      )}
+                    </motion.span>
+                  </AnimatePresence>
+                </motion.button>
               </div>
 
               {/* SFX Quick Test Button */}
               {activeScene?.sfx && activeScene.sfx !== 'none' && (
-                <button
+                <motion.button
                   type="button"
+                  whileTap={{ scale: 0.92 }}
                   onClick={() => playSFX(activeScene.sfx as StorySFX)}
-                  className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-[#FACC15] border border-neutral-700 flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                  className="text-[10px] font-bold px-3 py-1.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-[#FACC15] border border-neutral-700 flex items-center gap-1.5 transition cursor-pointer"
                   title="Test Scene Sound Effect"
                 >
                   <span>🔊</span>
                   <span>SFX: {activeScene.sfx}</span>
-                </button>
+                </motion.button>
               )}
             </div>
           </div>
@@ -658,29 +799,48 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
               </div>
             </div>
 
-            {/* Quick Presets Pills */}
+            {/* Quick Duration & Song Section Presets */}
             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-              <span className="text-[10px] text-neutral-400 font-semibold mr-1">Presets:</span>
+              <span className="text-[10px] text-neutral-400 font-semibold mr-1">Duration:</span>
+              {[8, 12, 16, 20].map((sec) => {
+                const isDurActive = Math.round(clipEnd - clipStart) === sec
+                return (
+                  <motion.button
+                    key={sec}
+                    type="button"
+                    whileTap={{ scale: 0.92 }}
+                    onClick={() => handleDurationPreset(sec)}
+                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition cursor-pointer border ${
+                      isDurActive
+                        ? 'bg-[#FACC15] text-neutral-950 border-[#FACC15] shadow'
+                        : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border-neutral-700'
+                    }`}
+                  >
+                    {sec}s
+                  </motion.button>
+                )
+              })}
+              <span className="text-[10px] text-neutral-500 mx-1">|</span>
               {[
                 { label: '🔥 Chorus (Kocee)', start: 42, end: 58 },
                 { label: '⚡ Intro', start: 0, end: 16 },
                 { label: '🎶 Hook 2', start: 72, end: 92 },
-                { label: '💥 Outro', start: 120, end: 140 },
               ].map((p, pIdx) => {
                 const isActive = clipStart === p.start && clipEnd === p.end
                 return (
-                  <button
+                  <motion.button
                     key={pIdx}
                     type="button"
+                    whileTap={{ scale: 0.92 }}
                     onClick={() => handleCropChange(p.start, p.end)}
-                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition active:scale-95 cursor-pointer border ${
+                    className={`text-[10px] px-2.5 py-1 rounded-full font-bold transition cursor-pointer border ${
                       isActive
                         ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow'
                         : 'bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border-neutral-700'
                     }`}
                   >
                     {p.label}
-                  </button>
+                  </motion.button>
                 )
               })}
             </div>
@@ -814,7 +974,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             {/* Preview Cut Action Bar */}
             <div className="flex items-center justify-between pt-1 border-t border-neutral-800/80">
               <span className="text-[10px] text-neutral-400">
-                Min 8s • Max 30s • Auto-divided into 4 scenes
+                Min 8s • Max 30s • Auto-divided into {timelineBlocks.length} scenes
               </span>
 
               <button
@@ -828,213 +988,287 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             </div>
           </div>
 
-          {/* 2. Character Casting (Character A & Character B) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>2. Character Casting (2-Actor Stage)</span>
-                <span className="text-[#FACC15]">✦</span>
-              </label>
-              <span className="text-[10px] text-[#8FA993] font-mono">
-                Open Peeps 2D
-              </span>
-            </div>
+          {/* 2. Per-Scene Comic Editor (Cast, Expressions & Dialogue for Active Scene) */}
+          {(() => {
+            const sceneCharA = (activeScene.charA_id || characterA) as 'tantie' | 'mboa_boy' | 'pa_buea'
+            const sceneCharB =
+              activeScene.charB_id !== undefined
+                ? (activeScene.charB_id || 'none')
+                : characterB
+            const sceneExprA =
+              (activeScene.charA_expression as ComicExpression) ||
+              expressionFromAction(activeScene.charA_action || activeScene.action)
+            const sceneExprB =
+              (activeScene.charB_expression as ComicExpression) ||
+              expressionFromAction(activeScene.charB_action)
+            const sceneDuration = Math.max(0.5, Number((activeScene.end - activeScene.start).toFixed(1)))
 
-            {/* Character A Picker (Left) */}
-            <div className="space-y-2">
-              <span className="text-[11px] font-bold text-neutral-300">
-                Lead Actor (Left):
-              </span>
-              <div className="grid grid-cols-3 gap-2">
-                {CHARACTERS.map((char) => {
-                  const isSelected = characterA === char.id
-                  return (
+            return (
+              <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-5">
+                {/* Scene Editor Header + Duration Tweak */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>2. Scene #{activeSceneIndex + 1} Comic Editor</span>
+                    <span className="text-[#FACC15]">🎬</span>
+                  </label>
+                  <div className="flex items-center gap-1.5">
                     <button
-                      key={char.id}
                       type="button"
-                      onClick={() => setCharacterA(char.id)}
-                      className={`flex flex-col items-center text-center p-2.5 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
-                          : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                      }`}
+                      onClick={() => handleAdjustSceneDuration(-0.5)}
+                      className="px-2 py-0.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[10px] font-bold text-neutral-300 border border-neutral-700 cursor-pointer"
+                      title="Shorten scene by 0.5s"
                     >
-                      <div className="w-12 h-12 rounded-full overflow-hidden mb-1.5">
-                        <CharacterAvatarCircle
-                          characterId={char.id}
-                          displayName={char.displayName}
-                          fallbackEmoji={char.avatar}
-                        />
-                      </div>
-                      <span className="text-xs font-black text-white leading-tight">
-                        {char.displayName}
-                      </span>
+                      -0.5s
                     </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Character B Picker (Right / Optional Companion) */}
-            <div className="space-y-2 pt-2 border-t border-neutral-800">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-neutral-300">
-                  Companion Actor (Right):
-                </span>
-                <span className="text-[10px] text-neutral-400">
-                  Optional 2nd Actor
-                </span>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setCharacterB('none')}
-                  className={`flex flex-col items-center justify-center p-2.5 rounded-2xl border text-center transition cursor-pointer ${
-                    characterB === 'none'
-                      ? 'bg-neutral-800 border-[#F43F5E] text-[#F43F5E]'
-                      : 'bg-neutral-900/60 border-neutral-800 text-neutral-400'
-                  }`}
-                >
-                  <span className="text-xl mb-1">✖️</span>
-                  <span className="text-[10px] font-bold">Solo Mode</span>
-                </button>
-                {CHARACTERS.map((char) => {
-                  const isSelected = characterB === char.id
-                  return (
+                    <span className="text-[10px] font-mono text-[#FACC15] bg-black/50 px-2.5 py-0.5 rounded-full border border-neutral-800">
+                      {activeScene.start}s – {activeScene.end}s ({sceneDuration}s)
+                    </span>
                     <button
-                      key={char.id}
                       type="button"
-                      onClick={() => setCharacterB(char.id)}
-                      className={`flex flex-col items-center text-center p-2.5 rounded-2xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
-                          : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
-                      }`}
+                      onClick={() => handleAdjustSceneDuration(0.5)}
+                      className="px-2 py-0.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-[10px] font-bold text-neutral-300 border border-neutral-700 cursor-pointer"
+                      title="Extend scene by 0.5s"
                     >
-                      <div className="w-10 h-10 rounded-full overflow-hidden mb-1">
-                        <CharacterAvatarCircle
-                          characterId={char.id}
-                          displayName={char.displayName}
-                          fallbackEmoji={char.avatar}
-                        />
-                      </div>
-                      <span className="text-[10px] font-bold text-white truncate w-full">
-                        {char.displayName}
-                      </span>
+                      +0.5s
                     </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Scene Action & Dialogue Editor (for Active Scene) */}
-          <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-                <span>3. Edit Scene #{activeSceneIndex + 1} Actions & Dialogue</span>
-                <span className="text-[#FACC15]">🎬</span>
-              </label>
-              <span className="text-[10px] font-mono text-[#FACC15] bg-black/40 px-2 py-0.5 rounded-full">
-                {activeScene.start}s – {activeScene.end}s
-              </span>
-            </div>
-
-            {/* Comic Dialogue Input for Character A */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span>{characterA.toUpperCase()} Dialogue (Top-Left Bubble):</span>
-              </label>
-              <input
-                type="text"
-                value={activeScene.dialogueA || ''}
-                onChange={(e) => updateActiveScene({ dialogueA: e.target.value })}
-                placeholder="Enter speech in English, French or Pidgin..."
-                maxLength={80}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
-              />
-            </div>
-
-            {/* Comic Dialogue Input for Character B (if active) */}
-            {characterB !== 'none' && (
-              <div className="space-y-1">
-                <label className="text-[11px] font-bold text-neutral-300 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-sky-400" />
-                  <span>{characterB.toUpperCase()} Dialogue (Top-Right Bubble):</span>
-                </label>
-                <input
-                  type="text"
-                  value={activeScene.dialogueB || ''}
-                  onChange={(e) => updateActiveScene({ dialogueB: e.target.value })}
-                  placeholder="Enter speech in English, French or Pidgin..."
-                  maxLength={80}
-                  className="w-full bg-neutral-900 border border-neutral-700 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
-                />
-              </div>
-            )}
-
-            {/* 12 Story Actions for Character A */}
-            <div className="space-y-2 pt-2 border-t border-neutral-800">
-              <span className="text-[11px] font-bold text-neutral-300">
-                {characterA.toUpperCase()} Action:
-              </span>
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
-                {STORY_ACTIONS.map((act) => {
-                  const isSelected = (activeScene.charA_action || activeScene.action) === act.id
-                  return (
-                    <button
-                      key={act.id}
-                      type="button"
-                      onClick={() => updateActiveScene({ charA_action: act.id, action: act.id })}
-                      className={`p-2 rounded-xl text-left border text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                        isSelected
-                          ? 'bg-[#536D56] text-white border-[#F43F5E] shadow font-bold'
-                          : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                      }`}
-                    >
-                      <span>{act.icon}</span>
-                      <span className="truncate">{act.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* 12 Story Actions for Character B (if active) */}
-            {characterB !== 'none' && (
-              <div className="space-y-2 pt-2 border-t border-neutral-800">
-                <span className="text-[11px] font-bold text-neutral-300">
-                  {characterB.toUpperCase()} Action:
-                </span>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-36 overflow-y-auto pr-1">
-                  {STORY_ACTIONS.map((act) => {
-                    const isSelected = activeScene.charB_action === act.id
-                    return (
+                    {timelineBlocks.length > 2 && (
                       <button
-                        key={act.id}
                         type="button"
-                        onClick={() => updateActiveScene({ charB_action: act.id })}
-                        className={`p-2 rounded-xl text-left border text-xs transition cursor-pointer flex items-center gap-1.5 ${
-                          isSelected
-                            ? 'bg-[#536D56] text-white border-[#F43F5E] shadow font-bold'
-                            : 'bg-neutral-900/80 text-neutral-300 border-neutral-800 hover:border-neutral-700'
-                        }`}
+                        onClick={() => handleDeleteScene(activeSceneIndex)}
+                        className="px-2 py-0.5 rounded-lg bg-red-950/50 hover:bg-red-900/60 text-[10px] font-bold text-red-300 border border-red-500/30 cursor-pointer ml-1"
+                        title="Delete this scene"
                       >
-                        <span>{act.icon}</span>
-                        <span className="truncate">{act.label}</span>
+                        Delete
                       </button>
-                    )
-                  })}
+                    )}
+                  </div>
+                </div>
+
+                {/* CHARACTER 1 (LEFT) */}
+                <div className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Character 1 (Left)
+                    </span>
+                    <span className="text-[10px] text-neutral-400">
+                      Top-Left Speech Bubble
+                    </span>
+                  </div>
+
+                  {/* Character 1 Picker */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {CHARACTERS.map((char) => {
+                      const isSelected = sceneCharA === char.id
+                      return (
+                        <button
+                          key={char.id}
+                          type="button"
+                          onClick={() => {
+                            setCharacterA(char.id)
+                            updateActiveScene({ charA_id: char.id })
+                          }}
+                          className={`flex flex-col items-center text-center p-2 rounded-2xl border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
+                              : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="w-11 h-11 rounded-full overflow-hidden mb-1">
+                            <CharacterAvatarCircle
+                              characterId={char.id}
+                              expression={isSelected ? sceneExprA : 'happy'}
+                            />
+                          </div>
+                          <span className="text-[11px] font-black text-white leading-tight">
+                            {char.displayName}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Character 1 Expression Picker */}
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                      Expression:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {COMIC_EXPRESSIONS.map((exp) => {
+                        const isSelected = sceneExprA === exp.id
+                        return (
+                          <motion.button
+                            key={exp.id}
+                            type="button"
+                            whileTap={{ scale: 0.92 }}
+                            onClick={() =>
+                              updateActiveScene({
+                                charA_expression: exp.id,
+                                action: exp.id,
+                              })
+                            }
+                            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                              isSelected
+                                ? 'bg-[#536D56] text-white border-[#F43F5E] shadow'
+                                : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                            }`}
+                          >
+                            <span>{exp.emoji}</span>
+                            <span>{exp.label}</span>
+                          </motion.button>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Character 1 Comic Dialogue */}
+                  <div className="space-y-1.5">
+                    <input
+                      type="text"
+                      value={activeScene.dialogueA || ''}
+                      onChange={(e) => updateActiveScene({ dialogueA: e.target.value })}
+                      placeholder="Character 1 speech (EN / FR / Pidgin)..."
+                      maxLength={80}
+                      className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {COMIC_STARTER_CHIPS.map((chip) => (
+                        <button
+                          key={chip}
+                          type="button"
+                          onClick={() => updateActiveScene({ dialogueA: chip })}
+                          className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 transition cursor-pointer"
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* CHARACTER 2 (RIGHT / OPTIONAL, MIRRORED) */}
+                <div className="p-3.5 rounded-2xl bg-neutral-950/60 border border-neutral-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-sky-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-400" />
+                      Character 2 (Right · Mirrored)
+                    </span>
+                    <span className="text-[10px] text-neutral-400">
+                      Top-Right Speech Bubble
+                    </span>
+                  </div>
+
+                  {/* Character 2 Picker */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCharacterB('none')
+                        updateActiveScene({ charB_id: null, dialogueB: '' })
+                      }}
+                      className={`flex flex-col items-center justify-center p-2 rounded-2xl border text-center transition cursor-pointer ${
+                        sceneCharB === 'none'
+                          ? 'bg-neutral-800 border-[#F43F5E] text-[#F43F5E]'
+                          : 'bg-neutral-900/60 border-neutral-800 text-neutral-400'
+                      }`}
+                    >
+                      <span className="text-lg mb-0.5">✖️</span>
+                      <span className="text-[10px] font-bold">Solo</span>
+                    </button>
+                    {CHARACTERS.map((char) => {
+                      const isSelected = sceneCharB === char.id
+                      return (
+                        <button
+                          key={char.id}
+                          type="button"
+                          onClick={() => {
+                            setCharacterB(char.id)
+                            updateActiveScene({ charB_id: char.id })
+                          }}
+                          className={`flex flex-col items-center text-center p-2 rounded-2xl border transition-all cursor-pointer ${
+                            isSelected
+                              ? 'bg-[#536D56]/30 border-[#F43F5E] shadow'
+                              : 'bg-neutral-900/60 border-neutral-800 hover:border-neutral-700'
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-full overflow-hidden mb-1">
+                            <CharacterAvatarCircle
+                              characterId={char.id}
+                              expression={isSelected ? sceneExprB : 'happy'}
+                            />
+                          </div>
+                          <span className="text-[10px] font-bold text-white truncate w-full">
+                            {char.displayName}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {sceneCharB !== 'none' && (
+                    <>
+                      {/* Character 2 Expression Picker */}
+                      <div className="space-y-1.5">
+                        <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-wider">
+                          Expression:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {COMIC_EXPRESSIONS.map((exp) => {
+                            const isSelected = sceneExprB === exp.id
+                            return (
+                              <motion.button
+                                key={exp.id}
+                                type="button"
+                                whileTap={{ scale: 0.92 }}
+                                onClick={() => updateActiveScene({ charB_expression: exp.id })}
+                                className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
+                                  isSelected
+                                    ? 'bg-[#536D56] text-white border-[#F43F5E] shadow'
+                                    : 'bg-neutral-900 text-neutral-300 border-neutral-800 hover:border-neutral-700'
+                                }`}
+                              >
+                                <span>{exp.emoji}</span>
+                                <span>{exp.label}</span>
+                              </motion.button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Character 2 Comic Dialogue */}
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          value={activeScene.dialogueB || ''}
+                          onChange={(e) => updateActiveScene({ dialogueB: e.target.value })}
+                          placeholder="Character 2 reply (EN / FR / Pidgin)..."
+                          maxLength={80}
+                          className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3.5 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-[#536D56]"
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {COMIC_STARTER_CHIPS.map((chip) => (
+                            <button
+                              key={chip}
+                              type="button"
+                              onClick={() => updateActiveScene({ dialogueB: chip })}
+                              className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700/80 transition cursor-pointer"
+                            >
+                              {chip}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+            )
+          })()}
 
-          {/* 4. Environment, Parallax Motion, Props & SFX Editor */}
+          {/* 3. Scene Background, Camera, Prop & SFX */}
           <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-xl space-y-4">
             <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-              <span>4. Environment, Camera, Prop & SFX</span>
+              <span>3. Scene Background, Camera, Prop & SFX</span>
               <span className="text-[#FACC15]">🌄</span>
             </label>
 
@@ -1047,9 +1281,10 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                 {STORY_BACKGROUNDS.slice(0, 4).map((bg) => {
                   const isSelected = (activeScene.bg || 'street_buea') === bg.id
                   return (
-                    <button
+                    <motion.button
                       key={bg.id}
                       type="button"
+                      whileTap={{ scale: 0.92 }}
                       onClick={() => updateActiveScene({ bg: bg.id })}
                       className={`p-2 rounded-2xl border text-center transition cursor-pointer ${
                         isSelected
@@ -1059,7 +1294,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                     >
                       <div className="text-xl mb-0.5">{bg.icon}</div>
                       <div className="text-[10px] font-bold truncate">{bg.label}</div>
-                    </button>
+                    </motion.button>
                   )
                 })}
               </div>
@@ -1074,9 +1309,10 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                 {BG_MOTIONS.map((m) => {
                   const isSelected = (activeScene.bgMotion || 'static') === m.id
                   return (
-                    <button
+                    <motion.button
                       key={m.id}
                       type="button"
+                      whileTap={{ scale: 0.92 }}
                       onClick={() => updateActiveScene({ bgMotion: m.id })}
                       className={`p-2 rounded-xl border text-center transition cursor-pointer text-xs ${
                         isSelected
@@ -1086,7 +1322,7 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                     >
                       <span className="mr-1">{m.icon}</span>
                       <span className="text-[10px]">{m.label}</span>
-                    </button>
+                    </motion.button>
                   )
                 })}
               </div>
@@ -1190,17 +1426,61 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
       </div>
 
       {/* ========================================================= */}
-      {/* 3. BOTTOM SCENE TIMELINE BAR (Visual Scene Cards) */}
+      {/* 3. BOTTOM SCENE TIMELINE BAR (Dynamic 2-8 Scenes) */}
       {/* ========================================================= */}
       <div className="p-5 rounded-3xl bg-[#121212] border border-[#536D56]/40 shadow-2xl space-y-3">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
-            <span>Scene Timeline ({timelineBlocks.length} Scenes)</span>
-            <span className="text-[#FACC15]">🎬</span>
-          </label>
-          <span className="text-[10px] text-neutral-400">
-            Click any scene to edit dialogue, moves, environment & SFX
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <label className="text-xs font-bold text-neutral-200 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Scene Timeline ({timelineBlocks.length} Scenes)</span>
+              <span className="text-[#FACC15]">🎬</span>
+            </label>
+
+            {/* - / + Scene Count Controls (2 to 8 scenes) */}
+            <div className="inline-flex items-center gap-1 bg-neutral-900 border border-neutral-700 rounded-full px-1.5 py-0.5">
+              <button
+                type="button"
+                disabled={timelineBlocks.length <= 2}
+                onClick={() => handleSceneCountChange(timelineBlocks.length - 1)}
+                className="w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-black flex items-center justify-center disabled:opacity-35 cursor-pointer"
+                title="Decrease scenes (min 2)"
+              >
+                -
+              </button>
+              <span className="text-[11px] font-mono font-bold text-[#FACC15] px-1.5">
+                {timelineBlocks.length}
+              </span>
+              <button
+                type="button"
+                disabled={timelineBlocks.length >= 8}
+                onClick={() => handleSceneCountChange(timelineBlocks.length + 1)}
+                className="w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-black flex items-center justify-center disabled:opacity-35 cursor-pointer"
+                title="Increase scenes (max 8)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleResetEvenSplit}
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-700 cursor-pointer"
+              title="Divide total duration evenly across all scenes"
+            >
+              Even Split
+            </button>
+            {timelineBlocks.length < 8 && (
+              <button
+                type="button"
+                onClick={() => handleSceneCountChange(timelineBlocks.length + 1)}
+                className="text-[10px] font-bold px-3 py-1 rounded-full bg-[#536D56] hover:bg-[#607d64] text-white cursor-pointer shadow"
+              >
+                + Add Scene
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1208,14 +1488,29 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
             const isEditing = activeSceneIndex === idx
             const isLive = currentHighlightedBlockIndex === idx && isPlaying
             const bgInfo = STORY_BACKGROUNDS.find((b) => b.id === (block.bg || 'street_buea'))
-            const actInfo = STORY_ACTIONS.find((a) => a.id === (block.charA_action || block.action))
+            const exprAId =
+              (block.charA_expression as ComicExpression) ||
+              expressionFromAction(block.charA_action || block.action)
+            const exprBId =
+              (block.charB_expression as ComicExpression) ||
+              expressionFromAction(block.charB_action)
+            const exprAInfo = COMIC_EXPRESSIONS.find((e) => e.id === exprAId)
+            const exprBInfo = COMIC_EXPRESSIONS.find((e) => e.id === exprBId)
             const sfxInfo = STORY_SFX_LIST.find((s) => s.id === block.sfx)
+            const hasB = block.charB_id !== undefined ? Boolean(block.charB_id) : characterB !== 'none'
 
             return (
-              <button
+              <div
                 key={idx}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => handleSelectScene(idx)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    handleSelectScene(idx)
+                  }
+                }}
                 className={`relative flex flex-col p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                   isEditing
                     ? 'bg-[#536D56]/30 border-[#F43F5E] shadow-[0_0_15px_rgba(244,63,94,0.3)] scale-[1.02]'
@@ -1233,9 +1528,24 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
 
                 <div className="flex items-center justify-between text-xs font-black text-white">
                   <span>Scene {idx + 1}</span>
-                  <span className="text-[10px] font-mono text-neutral-400">
-                    {block.start}s – {block.end}s
-                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-mono text-neutral-400">
+                      {block.start}s–{block.end}s
+                    </span>
+                    {timelineBlocks.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteScene(idx)
+                        }}
+                        className="ml-1 w-4 h-4 rounded-full bg-neutral-800 hover:bg-red-600 text-neutral-400 hover:text-white text-[9px] flex items-center justify-center cursor-pointer"
+                        title="Delete scene"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-1 text-[10px] text-[#8FA993] font-semibold mt-1">
@@ -1244,10 +1554,10 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                 </div>
 
                 <div className="text-[11px] font-bold text-white mt-1 truncate">
-                  {actInfo?.icon} {actInfo?.label || 'Approach'}
-                  {block.charB_action && block.charB_action !== 'none' && (
+                  {exprAInfo?.emoji || '😊'} {exprAInfo?.label || 'Happy'}
+                  {hasB && (
                     <span className="text-[#A1A1AA] text-[10px] ml-1">
-                      + {block.charB_action}
+                      · {exprBInfo?.emoji || '😊'} {exprBInfo?.label || 'Happy'}
                     </span>
                   )}
                 </div>
@@ -1258,20 +1568,22 @@ export const StudioPage: React.FC<StudioPageProps> = ({ onNavigateTab }) => {
                 </p>
 
                 {/* SFX / Prop Badge */}
-                <div className="flex items-center gap-1 mt-2">
-                  {sfxInfo && sfxInfo.id !== 'none' && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#FACC15]/20 text-[#FACC15] font-mono font-bold flex items-center gap-0.5">
-                      <span>{sfxInfo.icon}</span>
-                      <span>{sfxInfo.label}</span>
-                    </span>
-                  )}
-                  {block.prop && block.prop !== 'none' && (
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neutral-800 text-neutral-300 font-mono">
-                      {block.prop}
-                    </span>
-                  )}
-                </div>
-              </button>
+                {(sfxInfo && sfxInfo.id !== 'none') || (block.prop && block.prop !== 'none') ? (
+                  <div className="flex items-center gap-1 mt-2">
+                    {sfxInfo && sfxInfo.id !== 'none' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-[#FACC15]/20 text-[#FACC15] font-mono font-bold flex items-center gap-0.5">
+                        <span>{sfxInfo.icon}</span>
+                        <span>{sfxInfo.label}</span>
+                      </span>
+                    )}
+                    {block.prop && block.prop !== 'none' && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-neutral-800 text-neutral-300 font-mono">
+                        {block.prop}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             )
           })}
         </div>
